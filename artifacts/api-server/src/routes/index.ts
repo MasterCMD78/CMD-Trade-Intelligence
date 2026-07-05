@@ -7,6 +7,7 @@ import marketsRouter from "./markets.js";
 import signalsRouter from "./signals.js";
 import riskRouter from "./risk.js";
 import adminRouter from "./admin.js";
+import analysisRouter from "./analysis.js";
 
 const router: IRouter = Router();
 
@@ -17,6 +18,7 @@ router.use("/dashboard", dashboardRouter);
 router.use("/markets", marketsRouter);
 router.use("/signals", signalsRouter);
 router.use("/risk", riskRouter);
+router.use("/analysis", analysisRouter);
 router.use("/admin", adminRouter);
 
 export default router;
