@@ -1,4 +1,4 @@
-import { DecisionResult } from "../decision/DecisionEngine";
+import { DecisionResult } from "../decision_engine/DecisionEngine";
 import { ConfidenceResult } from "../confidence/ConfidenceEngine";
 
 export interface AIReport {

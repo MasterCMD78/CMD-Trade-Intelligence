@@ -1,9 +1,9 @@
-import { Candle } from "./type";
-
-import { MarketStructureEngine } from "./market_structure/MarketStructureEngine";
-import { SmartMoneyEngine } from "./smart_money/SmartMoneyEngine";
+import { Candle } from "./analysis/types";
+import { MarketStructureEngine } from "./analysis/market_structure/MarketStructureEngine";
+import { SmartMoneyEngine } from "./analysis/smart_money/SmartMoneyEngine";
+import { IndicatorEngine } from "./analysis/indicators/IndicatorsEngine";
 import { ConfidenceEngine } from "./confidence/ConfidenceEngine";
-import { DecisionEngine } from "./decision/DecisionEngine";
+import { DecisionEngine } from "./decision_engine/DecisionEngine";
 import { ReportGenerator } from "./report/ReportGenerator";
 
 export class AIEngine {
@@ -16,8 +16,11 @@ export class AIEngine {
     const smartMoney =
       SmartMoneyEngine.analyze(candles);
 
+    const indicators =
+      IndicatorEngine.analyze(candles);
+
     const confidence =
-      ConfidenceEngine.calculate(smartMoney);
+      ConfidenceEngine.calculate(smartMoney, indicators);
 
     const decision =
       DecisionEngine.decide(confidence);
@@ -33,6 +36,8 @@ export class AIEngine {
       marketStructure,
 
       smartMoney,
+
+      indicators,
 
       confidence,
 
