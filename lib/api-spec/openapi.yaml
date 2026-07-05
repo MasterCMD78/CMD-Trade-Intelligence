@@ -2,21 +2,35 @@ openapi: 3.1.0
 info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
-  version: 0.1.0
-  description: API specification
+  version: 0.2.0
+  description: CMD Trade Intelligence API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication operations
+  - name: users
+    description: User management
+  - name: dashboard
+    description: Dashboard summary data
+  - name: markets
+    description: Market data
+  - name: signals
+    description: Trade signals
+  - name: risk
+    description: Risk management
+  - name: admin
+    description: Admin operations
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +38,723 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterInput"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout current user
+      responses:
+        "200":
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /auth/refresh:
+    post:
+      operationId: refreshToken
+      tags: [auth]
+      summary: Refresh access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshTokenInput"
+      responses:
+        "200":
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid refresh token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /users/me:
+    get:
+      operationId: getMe
+      tags: [users]
+      summary: Get current user profile
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateMe
+      tags: [users]
+      summary: Update current user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdate"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/me/settings:
+    get:
+      operationId: getUserSettings
+      tags: [users]
+      summary: Get user settings
+      responses:
+        "200":
+          description: User settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserSettings"
+    patch:
+      operationId: updateUserSettings
+      tags: [users]
+      summary: Update user settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserSettingsUpdate"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserSettings"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get dashboard summary metrics
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Market Data ─────────────────────────────────────────────────────────────
+  # IMPORTANT: /markets/timeframes must be declared BEFORE /markets/{symbol}
+  # so Express does not match "timeframes" as a symbol path parameter.
+
+  /markets/timeframes:
+    get:
+      operationId: getTimeframes
+      tags: [markets]
+      summary: List all supported timeframes
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Timeframe list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimeframeList"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /markets:
+    get:
+      operationId: getMarkets
+      tags: [markets]
+      summary: List all available trading symbols
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: assetClass
+          in: query
+          schema:
+            type: string
+            enum: [forex, crypto, indices, commodities]
+        - name: active
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Symbol list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MarketSymbol"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /markets/{symbol}:
+    get:
+      operationId: getMarketQuote
+      tags: [markets]
+      summary: Get current quote for a symbol
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current quote
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketQuote"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Symbol not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /markets/{symbol}/candles/{timeframe}:
+    get:
+      operationId: getSymbolCandles
+      tags: [markets]
+      summary: Get OHLCV candles for a symbol and timeframe
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: timeframe
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: ["1M","5M","15M","30M","1H","4H","1D","1W"]
+      responses:
+        "200":
+          description: Candle list (last 100 candles, newest last)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MarketCandle"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Symbol not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /signals:
+    get:
+      operationId: getSignals
+      tags: [signals]
+      summary: Get trade signals list
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, closed, pending]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Signals list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Signal"
+
+  /risk/summary:
+    get:
+      operationId: getRiskSummary
+      tags: [risk]
+      summary: Get risk management summary
+      responses:
+        "200":
+          description: Risk summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RiskSummary"
+
+  /admin/users:
+    get:
+      operationId: getAdminUsers
+      tags: [admin]
+      summary: Get all users (admin only)
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Users list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUsersResponse"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/stats:
+    get:
+      operationId: getAdminStats
+      tags: [admin]
+      summary: Get platform stats (admin only)
+      responses:
+        "200":
+          description: Platform stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStats"
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
         status:
           type: string
-      required:
-        - status
 
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    RegisterInput:
+      type: object
+      required: [email, password, fullName]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        fullName:
+          type: string
+
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    RefreshTokenInput:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    AuthResponse:
+      type: object
+      required: [accessToken, refreshToken, user]
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+
+    User:
+      type: object
+      required: [id, email, fullName, role, plan, createdAt]
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        fullName:
+          type: string
+        role:
+          type: string
+          enum: [user, admin]
+        plan:
+          type: string
+          enum: [free, pro, enterprise]
+        avatarUrl:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    UserUpdate:
+      type: object
+      properties:
+        fullName:
+          type: string
+        avatarUrl:
+          type: ["string", "null"]
+
+    UserSettings:
+      type: object
+      required: [userId, theme, notifications, defaultCurrency, defaultTimeframe]
+      properties:
+        userId:
+          type: integer
+        theme:
+          type: string
+          enum: [dark, light, system]
+        notifications:
+          type: boolean
+        defaultCurrency:
+          type: string
+        defaultTimeframe:
+          type: string
+
+    UserSettingsUpdate:
+      type: object
+      properties:
+        theme:
+          type: string
+          enum: [dark, light, system]
+        notifications:
+          type: boolean
+        defaultCurrency:
+          type: string
+        defaultTimeframe:
+          type: string
+
+    DashboardSummary:
+      type: object
+      required: [totalSignals, activeMarkets, accountStatus, planName, marketStatus]
+      properties:
+        totalSignals:
+          type: integer
+        activeMarkets:
+          type: integer
+        accountStatus:
+          type: string
+        planName:
+          type: string
+        marketStatus:
+          type: string
+
+    # ─── Market Data Schemas ──────────────────────────────────────────────────
+
+    TimeframeList:
+      type: object
+      required: [timeframes]
+      properties:
+        timeframes:
+          type: array
+          items:
+            type: object
+            required: [value, label]
+            properties:
+              value:
+                type: string
+              label:
+                type: string
+
+    MarketSymbol:
+      type: object
+      required: [symbol, baseCurrency, quoteCurrency, assetClass, displayName, precision, minSpread, tradingHours, active]
+      properties:
+        symbol:
+          type: string
+        baseCurrency:
+          type: string
+        quoteCurrency:
+          type: string
+        assetClass:
+          type: string
+          enum: [forex, crypto, indices, commodities]
+        displayName:
+          type: string
+        precision:
+          type: integer
+        minSpread:
+          type: number
+        tradingHours:
+          type: string
+        active:
+          type: boolean
+
+    MarketQuote:
+      type: object
+      required: [symbol, bid, ask, mid, spread, change24h, changePct24h, high24h, low24h, volume24h, timestamp, source, assetClass, displayName, precision, tradingHours]
+      properties:
+        symbol:
+          type: string
+        bid:
+          type: number
+        ask:
+          type: number
+        mid:
+          type: number
+        spread:
+          type: number
+        change24h:
+          type: number
+        changePct24h:
+          type: number
+        high24h:
+          type: number
+        low24h:
+          type: number
+        volume24h:
+          type: number
+        timestamp:
+          type: string
+          format: date-time
+        source:
+          type: string
+        assetClass:
+          type: string
+          enum: [forex, crypto, indices, commodities]
+        displayName:
+          type: string
+        precision:
+          type: integer
+        tradingHours:
+          type: string
+
+    MarketCandle:
+      type: object
+      required: [symbol, timeframe, open, high, low, close, volume, timestamp, closed]
+      properties:
+        symbol:
+          type: string
+        timeframe:
+          type: string
+        open:
+          type: number
+        high:
+          type: number
+        low:
+          type: number
+        close:
+          type: number
+        volume:
+          type: number
+        timestamp:
+          type: string
+          format: date-time
+        closed:
+          type: boolean
+
+    # ─── Signals ─────────────────────────────────────────────────────────────
+
+    Signal:
+      type: object
+      required: [id, symbol, direction, status, timeframe, createdAt]
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+        direction:
+          type: string
+          enum: [buy, sell, neutral]
+        status:
+          type: string
+          enum: [active, closed, pending]
+        timeframe:
+          type: string
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    # ─── Risk ────────────────────────────────────────────────────────────────
+
+    RiskSummary:
+      type: object
+      required: [status, maxDrawdownPct, maxPositionSizePct, riskPerTradePct]
+      properties:
+        status:
+          type: string
+        maxDrawdownPct:
+          type: number
+        maxPositionSizePct:
+          type: number
+        riskPerTradePct:
+          type: number
+
+    # ─── Admin ───────────────────────────────────────────────────────────────
+
+    AdminUsersResponse:
+      type: object
+      required: [users, total, page, limit]
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    AdminStats:
+      type: object
+      required: [totalUsers, activeUsers, totalSignals, planBreakdown]
+      properties:
+        totalUsers:
+          type: integer
+        activeUsers:
+          type: integer
+        totalSignals:
+          type: integer
+        planBreakdown:
+          type: object
+          required: [free, pro, enterprise]
+          properties:
+            free:
+              type: integer
+            pro:
+              type: integer
+            enterprise:
+              type: integer

@@ -1,0 +1,4 @@
+- [Orval codegen workflow](orval-codegen.md) — run from lib/api-spec/ with `npx orval --config orval.config.ts`; no npm script alias exists
+- [TanStack Query v5 + Orval options typing](tanstack-orval-options.md) — passing partial query options to generated hooks requires `as any`; generated hooks enforce full `UseQueryOptions` including `queryKey`
+- [MarketQuote extended fields](market-quote-fields.md) — `/markets/{symbol}` returns symbol metadata (assetClass, displayName, precision, tradingHours) merged into the quote; OpenAPI spec must declare all fields
+- [WS channel validation](ws-channel-validation.md) — subscribe() validates format (tick|candle + uppercase symbol 3-12 chars + valid timeframe); cap 50 subs/client; prevents memory DoS

@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "CMD Trade Intelligence"
+version = "1.0.0"
+id = "artifacts/cmd-trade"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24583
+
+[services.development]
+run = "pnpm --filter @workspace/cmd-trade run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/cmd-trade", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/cmd-trade/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24583"
+BASE_PATH = "/"
