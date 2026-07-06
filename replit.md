@@ -61,3 +61,11 @@ _Populate as you build — explicit user instructions worth remembering across s
 - Do NOT run `pnpm dev` at the workspace root — apps run via workflows with injected PORT and BASE_PATH env vars.
 - Do NOT call `configureWorkflow` for artifact services — their managed workflows already provide routing and env configuration.
 - JWT secrets have development fallbacks — always set real secrets before deploying to production.
+- `DATABASE_URL` is auto-provisioned by Replit; do not set it manually.
+- Access tokens expire in 15 minutes; the frontend refresh token flow is not yet wired up — users must re-login after expiry until this is implemented.
+
+## Replit Setup Notes
+
+- Dependencies installed with `pnpm install` on first setup.
+- Database schema pushed with `pnpm --filter @workspace/db run push` (Drizzle Kit).
+- Two managed workflows: `artifacts/api-server: API Server` (Express) and `artifacts/cmd-trade: web` (Vite). Both must be running for the full app to work.
