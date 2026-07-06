@@ -9,19 +9,20 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import {
   Activity, ChevronRight,
-  Globe, BarChart2, Zap,
+  Globe, BarChart2, Zap, Wifi, WifiOff,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useMarketWebSocket } from '@/hooks/useMarketWebSocket';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatNumber(n: number, precision: number): string {
-  return n.toFixed(precision);
-}
 
 function formatChange(pct: number): { label: string; positive: boolean } {
   const sign = pct >= 0 ? '+' : '';
   return { label: `${sign}${pct.toFixed(2)}%`, positive: pct >= 0 };
+}
+
+function formatPrice(n: number, precision: number): string {
+  return n.toFixed(precision);
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -58,6 +59,24 @@ function StatCard({ title, value, icon, accent }: StatCardProps) {
 
 type AssetFilter = 'all' | 'forex' | 'crypto';
 
+// ─── WS status badge ──────────────────────────────────────────────────────────
+
+function WsStatusBadge({ status }: { status: 'connecting' | 'connected' | 'disconnected' | 'error' }) {
+  const map = {
+    connecting:   { label: 'Connecting…', color: 'text-yellow-400', Icon: Wifi },
+    connected:    { label: 'Live',        color: 'text-accent',     Icon: Wifi },
+    disconnected: { label: 'Offline',     color: 'text-muted-foreground', Icon: WifiOff },
+    error:        { label: 'Error',       color: 'text-destructive', Icon: WifiOff },
+  } as const;
+  const { label, color, Icon } = map[status];
+  return (
+    <span className={`flex items-center gap-1 text-xs font-mono ${color}`}>
+      <Icon className="h-3 w-3" />
+      {label}
+    </span>
+  );
+}
+
 // ─── Markets page ─────────────────────────────────────────────────────────────
 
 export default function Markets() {
@@ -68,8 +87,13 @@ export default function Markets() {
   const { data: symbols = [], isLoading: symbolsLoading, error: symbolsError } = useGetMarkets(queryParams);
   const { data: tfData, isLoading: tfLoading } = useGetTimeframes();
 
+  // Live WebSocket prices — subscribe to every symbol in the current view.
+  const symbolKeys = symbols.map((s) => s.symbol);
+  const { ticks, status: wsStatus } = useMarketWebSocket(symbolKeys, symbolKeys.length > 0);
+
   const forexCount  = symbols.filter((s) => s.assetClass === 'forex').length;
   const cryptoCount = symbols.filter((s) => s.assetClass === 'crypto').length;
+  const liveCount   = Object.keys(ticks).length;
 
   const filters: { key: AssetFilter; label: string }[] = [
     { key: 'all',    label: 'All' },
@@ -131,10 +155,20 @@ export default function Markets() {
       {/* ── Symbol table ── */}
       <Card className="bg-card border-border shadow-sm">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm uppercase tracking-wider font-mono text-muted-foreground flex items-center gap-2">
-            <Activity className="h-4 w-4 text-accent" />
-            Symbol Catalogue
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm uppercase tracking-wider font-mono text-muted-foreground flex items-center gap-2">
+              <Activity className="h-4 w-4 text-accent" />
+              Symbol Catalogue
+            </CardTitle>
+            <div className="flex items-center gap-3">
+              {liveCount > 0 && (
+                <span className="text-xs font-mono text-muted-foreground">
+                  {liveCount} live
+                </span>
+              )}
+              <WsStatusBadge status={wsStatus} />
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           {symbolsError ? (
@@ -158,8 +192,8 @@ export default function Markets() {
           ) : (
             <>
               {/* Table header */}
-              <div className="grid grid-cols-[1fr_120px_100px_80px_32px] gap-4 px-6 py-2 border-b border-border bg-muted/30">
-                {['Symbol', 'Display', 'Asset Class', 'Hours', ''].map((h, i) => (
+              <div className="grid grid-cols-[1fr_120px_100px_120px_80px_32px] gap-4 px-6 py-2 border-b border-border bg-muted/30">
+                {['Symbol', 'Display', 'Asset Class', 'Bid / Ask', 'Change', ''].map((h, i) => (
                   <span key={i} className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
                     {h}
                   </span>
@@ -167,73 +201,95 @@ export default function Markets() {
               </div>
               {/* Rows */}
               <div className="divide-y divide-border/50">
-                {symbols.map((sym, idx) => (
-                  <motion.div
-                    key={sym.symbol}
-                    initial={{ opacity: 0, x: -8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.2, delay: idx * 0.02 }}
-                    onClick={() => navigate(`/markets/${sym.symbol}`)}
-                    className="grid grid-cols-[1fr_120px_100px_80px_32px] gap-4 px-6 py-3.5 hover:bg-muted/20 transition-colors cursor-pointer group"
-                  >
-                    {/* Symbol */}
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-1.5 h-1.5 rounded-full ${sym.active ? 'bg-accent' : 'bg-muted'}`}
-                      />
-                      <span className="font-mono font-semibold tracking-wider text-sm group-hover:text-accent transition-colors">
-                        {sym.symbol}
-                      </span>
-                    </div>
-
-                    {/* Display name */}
-                    <span className="font-mono text-sm text-muted-foreground">
-                      {sym.displayName}
-                    </span>
-
-                    {/* Asset class badge */}
-                    <Badge
-                      variant="outline"
-                      className={`font-mono text-xs w-fit ${
-                        sym.assetClass === 'crypto'
-                          ? 'border-accent/40 text-accent'
-                          : 'border-muted-foreground/30 text-muted-foreground'
-                      }`}
+                {symbols.map((sym, idx) => {
+                  const tick = ticks[sym.symbol];
+                  const change = tick ? formatChange(tick.changePct24h) : null;
+                  return (
+                    <motion.div
+                      key={sym.symbol}
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.2, delay: idx * 0.02 }}
+                      onClick={() => navigate(`/markets/${sym.symbol}`)}
+                      className="grid grid-cols-[1fr_120px_100px_120px_80px_32px] gap-4 px-6 py-3.5 hover:bg-muted/20 transition-colors cursor-pointer group"
                     >
-                      {sym.assetClass.toUpperCase()}
-                    </Badge>
+                      {/* Symbol */}
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-1.5 h-1.5 rounded-full ${tick ? 'bg-accent animate-pulse' : sym.active ? 'bg-accent/40' : 'bg-muted'}`}
+                        />
+                        <span className="font-mono font-semibold tracking-wider text-sm group-hover:text-accent transition-colors">
+                          {sym.symbol}
+                        </span>
+                      </div>
 
-                    {/* Trading hours */}
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {sym.tradingHours}
-                    </span>
+                      {/* Display name */}
+                      <span className="font-mono text-sm text-muted-foreground">
+                        {sym.displayName}
+                      </span>
 
-                    {/* Arrow */}
-                    <ChevronRight className="h-4 w-4 text-muted-foreground/30 group-hover:text-accent transition-colors self-center" />
-                  </motion.div>
-                ))}
+                      {/* Asset class badge */}
+                      <Badge
+                        variant="outline"
+                        className={`font-mono text-xs w-fit ${
+                          sym.assetClass === 'crypto'
+                            ? 'border-accent/40 text-accent'
+                            : 'border-muted-foreground/30 text-muted-foreground'
+                        }`}
+                      >
+                        {sym.assetClass.toUpperCase()}
+                      </Badge>
+
+                      {/* Live bid / ask */}
+                      <div className="flex flex-col justify-center">
+                        {tick ? (
+                          <span className="font-mono text-xs tabular-nums">
+                            <span className="text-destructive/80">{formatPrice(tick.bid, sym.precision)}</span>
+                            <span className="text-muted-foreground mx-1">/</span>
+                            <span className="text-accent">{formatPrice(tick.ask, sym.precision)}</span>
+                          </span>
+                        ) : (
+                          <span className="font-mono text-xs text-muted-foreground/40">—</span>
+                        )}
+                      </div>
+
+                      {/* 24h change */}
+                      <div className="flex items-center">
+                        {change ? (
+                          <span className={`font-mono text-xs tabular-nums ${change.positive ? 'text-accent' : 'text-destructive'}`}>
+                            {change.label}
+                          </span>
+                        ) : (
+                          <span className="font-mono text-xs text-muted-foreground/40">—</span>
+                        )}
+                      </div>
+
+                      {/* Arrow */}
+                      <ChevronRight className="h-4 w-4 text-muted-foreground/30 group-hover:text-accent transition-colors self-center" />
+                    </motion.div>
+                  );
+                })}
               </div>
             </>
           )}
         </CardContent>
       </Card>
 
-      {/* ── WebSocket notice ── */}
+      {/* ── Live feed status bar ── */}
       <Card className="bg-card border-border border-dashed shadow-sm">
-        <CardContent className="py-5 px-6">
-          <div className="flex items-center gap-4 text-muted-foreground">
-            <Activity className="h-5 w-5 shrink-0 text-accent/60" />
-            <div>
+        <CardContent className="py-4 px-6">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 text-muted-foreground">
+              <Activity className="h-4 w-4 shrink-0 text-accent/60" />
               <p className="text-sm font-mono">
-                <span className="text-accent font-semibold">Live feed ready.</span>{' '}
-                Connect via WebSocket at <code className="bg-muted px-1.5 py-0.5 rounded text-xs">/ws</code> to stream
-                real-time ticks and candles for any symbol.
-                Subscribe with{' '}
-                <code className="bg-muted px-1.5 py-0.5 rounded text-xs">
-                  {JSON.stringify({ type: 'subscribe', channel: 'tick:EURUSD' })}
-                </code>
+                <span className="text-accent font-semibold">WebSocket feed active.</span>{' '}
+                Streaming live bid/ask ticks for all symbols above.
+                {wsStatus === 'connected' && liveCount > 0 && (
+                  <span className="text-muted-foreground"> — {liveCount} symbols receiving data.</span>
+                )}
               </p>
             </div>
+            <WsStatusBadge status={wsStatus} />
           </div>
         </CardContent>
       </Card>

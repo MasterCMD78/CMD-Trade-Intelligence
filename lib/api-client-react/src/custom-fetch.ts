@@ -8,6 +8,13 @@ export type BodyType<T> = T;
 
 export type AuthTokenGetter = () => Promise<string | null> | string | null;
 
+/**
+ * A handler that is called when a request returns 401 Unauthorized.
+ * It should attempt to refresh the access token and return the new token,
+ * or return null / throw if refresh is not possible.
+ */
+export type TokenRefreshHandler = () => Promise<string | null>;
+
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
@@ -17,6 +24,10 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
+let _tokenRefreshHandler: TokenRefreshHandler | null = null;
+// In-flight refresh promise — shared across concurrent 401 responses so we
+// only fire one refresh request at a time.
+let _refreshPromise: Promise<string | null> | null = null;
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -42,6 +53,18 @@ export function setBaseUrl(url: string | null): void {
  */
 export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
+}
+
+/**
+ * Register a handler that is invoked on 401 responses to attempt a token
+ * refresh.  The handler should return a new access token on success, or
+ * null / throw on failure (which will cause the original 401 error to be
+ * re-thrown and the caller to handle the unauthenticated state).
+ *
+ * Pass `null` to disable automatic token refresh.
+ */
+export function setTokenRefreshHandler(handler: TokenRefreshHandler | null): void {
+  _tokenRefreshHandler = handler;
 }
 
 function isRequest(input: RequestInfo | URL): input is Request {
@@ -361,6 +384,49 @@ export async function customFetch<T = unknown>(
   const requestInfo = { method, url: resolveUrl(input) };
 
   const response = await fetch(input, { ...init, method, headers });
+
+  // ── 401 auto-refresh ────────────────────────────────────────────────────
+  // When a refresh handler is registered and the request was authenticated,
+  // attempt a single token refresh and retry the request once.
+  if (
+    response.status === 401 &&
+    _tokenRefreshHandler &&
+    headers.has("authorization")
+  ) {
+    try {
+      // Coalesce concurrent 401s into a single refresh call.
+      if (!_refreshPromise) {
+        _refreshPromise = _tokenRefreshHandler().finally(() => {
+          _refreshPromise = null;
+        });
+      }
+      const newToken = await _refreshPromise;
+
+      if (newToken) {
+        // Retry with the fresh token.
+        const retryHeaders = mergeHeaders(
+          isRequest(input) ? input.headers : undefined,
+          headersInit,
+        );
+        retryHeaders.set("authorization", `Bearer ${newToken}`);
+        if (typeof init.body === "string" && !retryHeaders.has("content-type") && looksLikeJson(init.body)) {
+          retryHeaders.set("content-type", "application/json");
+        }
+        if (responseType === "json" && !retryHeaders.has("accept")) {
+          retryHeaders.set("accept", DEFAULT_JSON_ACCEPT);
+        }
+        const retryResponse = await fetch(input, { ...init, method, headers: retryHeaders });
+        if (!retryResponse.ok) {
+          const errorData = await parseErrorBody(retryResponse, method);
+          throw new ApiError(retryResponse, errorData, requestInfo);
+        }
+        return (await parseSuccessBody(retryResponse, responseType, requestInfo)) as T;
+      }
+    } catch {
+      // Refresh failed — fall through to throw the original 401 error.
+    }
+  }
+  // ────────────────────────────────────────────────────────────────────────
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);
