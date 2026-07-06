@@ -417,13 +417,19 @@ export async function customFetch<T = unknown>(
         }
         const retryResponse = await fetch(input, { ...init, method, headers: retryHeaders });
         if (!retryResponse.ok) {
+          // Surface the post-refresh failure directly (don't fall through to
+          // the original 401 handling below — this is a distinct error).
           const errorData = await parseErrorBody(retryResponse, method);
           throw new ApiError(retryResponse, errorData, requestInfo);
         }
         return (await parseSuccessBody(retryResponse, responseType, requestInfo)) as T;
       }
-    } catch {
-      // Refresh failed — fall through to throw the original 401 error.
+    } catch (err) {
+      // If the error is already an ApiError from the retry, re-throw it so
+      // callers can distinguish a post-refresh failure from the original 401.
+      if (err instanceof ApiError) throw err;
+      // Otherwise (refresh itself failed — network error, handler threw, etc.)
+      // fall through to re-throw the original 401 below.
     }
   }
   // ────────────────────────────────────────────────────────────────────────

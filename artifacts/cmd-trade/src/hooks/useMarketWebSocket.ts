@@ -40,6 +40,9 @@ const MAX_RECONNECT_ATTEMPTS = 5;
  * for the given symbols. Returns a map of symbol → latest tick data and the
  * current connection status.
  *
+ * Symbols added are subscribed automatically; symbols removed are unsubscribed
+ * and their stale ticks are pruned from the returned map.
+ *
  * @param symbols  List of symbols to subscribe to (e.g. ["EURUSD", "BTCUSDT"])
  * @param enabled  Set to false to skip connecting (e.g. when the component is
  *                 not visible). Defaults to true.
@@ -52,19 +55,14 @@ export function useMarketWebSocket(
   const [status, setStatus] = useState<WsStatus>('disconnected');
 
   const wsRef = useRef<WebSocket | null>(null);
-  const symbolsRef = useRef<string[]>(symbols);
+  const prevSymbolsRef = useRef<string[]>([]);
   const reconnectCount = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unmountedRef = useRef(false);
 
-  // Keep symbolsRef in sync so the reconnect handler sees the latest symbols.
-  useEffect(() => {
-    symbolsRef.current = symbols;
-  }, [symbols]);
-
-  const subscribe = useCallback((ws: WebSocket, syms: string[]) => {
-    for (const sym of syms) {
-      ws.send(JSON.stringify({ type: 'subscribe', channel: `tick:${sym}` }));
+  const sendJson = useCallback((ws: WebSocket, payload: object) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(payload));
     }
   }, []);
 
@@ -89,7 +87,10 @@ export function useMarketWebSocket(
       if (unmountedRef.current) { ws.close(); return; }
       reconnectCount.current = 0;
       setStatus('connected');
-      subscribe(ws, symbolsRef.current);
+      // Subscribe to all currently tracked symbols.
+      for (const sym of prevSymbolsRef.current) {
+        sendJson(ws, { type: 'subscribe', channel: `tick:${sym}` });
+      }
     };
 
     ws.onmessage = (event: MessageEvent) => {
@@ -121,9 +122,9 @@ export function useMarketWebSocket(
       // onclose will fire after onerror; let it handle reconnection.
       setStatus('error');
     };
-  }, [subscribe]);
+  }, [sendJson]);
 
-  // ── Effect: connect / disconnect on enable toggle ─────────────────────────
+  // ── Effect: connect / disconnect based on enabled flag ───────────────────
 
   useEffect(() => {
     unmountedRef.current = false;
@@ -144,13 +145,40 @@ export function useMarketWebSocket(
     };
   }, [enabled, connect]);
 
-  // ── Effect: update subscriptions when symbols list changes ────────────────
+  // ── Effect: diff symbols list and send subscribe/unsubscribe deltas ───────
 
   useEffect(() => {
     const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    subscribe(ws, symbols);
-  }, [symbols, subscribe]);
+    const prev = new Set(prevSymbolsRef.current);
+    const next = new Set(symbols);
+
+    // Subscribe to newly added symbols.
+    for (const sym of next) {
+      if (!prev.has(sym) && ws && ws.readyState === WebSocket.OPEN) {
+        sendJson(ws, { type: 'subscribe', channel: `tick:${sym}` });
+      }
+    }
+
+    // Unsubscribe from removed symbols and prune their stale ticks.
+    const removed: string[] = [];
+    for (const sym of prev) {
+      if (!next.has(sym)) {
+        removed.push(sym);
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          sendJson(ws, { type: 'unsubscribe', channel: `tick:${sym}` });
+        }
+      }
+    }
+    if (removed.length > 0) {
+      setTicks((prev) => {
+        const next = { ...prev };
+        for (const sym of removed) delete next[sym];
+        return next;
+      });
+    }
+
+    prevSymbolsRef.current = symbols;
+  }, [symbols, sendJson]);
 
   return { ticks, status };
 }
