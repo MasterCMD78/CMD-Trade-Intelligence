@@ -4,3 +4,8 @@
 - [WS channel validation](ws-channel-validation.md) — subscribe() validates format (tick|candle + uppercase symbol 3-12 chars + valid timeframe); cap 50 subs/client; prevents memory DoS
 - [Storage hardening for sandboxed iframes](storage-iframe-hardening.md) — localStorage throws SecurityError in some Replit iframe contexts; always use src/lib/storage.ts safe wrapper
 - [Vite dev proxy for API and WebSocket](vite-dev-proxy.md) — server.proxy in vite.config.ts forwards /api and /ws to :8080; required for consistent behaviour in dev
+- [MockProvider tick streaming](mock-provider-ticks.md) — subscribeTicks uses one setInterval per symbol shared across handlers; disconnect() clears all; multiple subscribers never create duplicate intervals
+- [WS streaming hooks wiring](ws-streaming-hooks.md) — wsManager.setStreamingHooks(onActive, onInactive) bridges WS subs to provider; wired in index.ts via activeTickSubs Map; must be called before wsManager.attach()
+- [Workflow env vars](workflow-env-vars.md) — manually-configured workflows do NOT get PORT/BASE_PATH from artifact.toml; must prefix command: PORT=8080 ... or PORT=24583 BASE_PATH=/ ...
+- [DB schema push required on fresh env](db-schema-push.md) — DATABASE_URL is provided but schema is not auto-applied; run pnpm --filter @workspace/db run push before auth endpoints work
+- [Route sub-path conventions](route-subpaths.md) — /api/dashboard, /api/risk, /api/analysis have no root GET; only sub-paths like /summary exist; this is intentional and pre-existing

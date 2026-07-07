@@ -13,8 +13,12 @@
  *   - A keep-alive ping is sent every 30 s; clients that do not pong within 15 s
  *     are terminated.
  *
- * Current status: Architecture scaffolded. Real broadcasts are wired when a live
- * provider is connected (live provider is Phase 3 scope).
+ * Streaming hooks:
+ *   Call setStreamingHooks(onActive, onInactive) before attach() to be notified
+ *   when a tick channel gains its first subscriber (→ start the provider stream)
+ *   or loses its last subscriber (→ stop the provider stream).  This bridges the
+ *   WS subscription layer with the market data provider without creating a
+ *   circular dependency between the two modules.
  */
 
 import { WebSocket, WebSocketServer } from "ws";
@@ -54,6 +58,15 @@ export const WsChannels = {
     return `candle:${symbol.toUpperCase()}:${timeframe}`;
   },
 } as const;
+
+// ─── Streaming hooks ──────────────────────────────────────────────────────────
+
+/**
+ * Called when a channel transitions:
+ *   onActive  — 0 → 1 subscribers  (start provider stream)
+ *   onInactive — 1 → 0 subscribers (stop  provider stream)
+ */
+type ChannelHook = (channel: string) => void;
 
 // ─── Internal client state ────────────────────────────────────────────────────
 
@@ -131,6 +144,24 @@ export class WebSocketManager {
   private nextClientId = 1;
   private pingInterval: ReturnType<typeof setInterval> | null = null;
 
+  /** Optional hooks fired on first/last subscriber transitions. */
+  private onChannelActive: ChannelHook | null = null;
+  private onChannelInactive: ChannelHook | null = null;
+
+  // ─── Streaming bridge ────────────────────────────────────────────────────────
+
+  /**
+   * Register callbacks to bridge WS subscriptions with the market data provider.
+   * Must be called before attach().
+   *
+   * onActive  — fired when a channel goes from 0 → 1 subscribers.
+   * onInactive — fired when a channel goes from 1 → 0 subscribers.
+   */
+  setStreamingHooks(onActive: ChannelHook, onInactive: ChannelHook): void {
+    this.onChannelActive = onActive;
+    this.onChannelInactive = onInactive;
+  }
+
   // ─── Lifecycle ──────────────────────────────────────────────────────────────
 
   /** Attach the manager to an existing HTTP server. */
@@ -148,6 +179,12 @@ export class WebSocketManager {
   /** Graceful shutdown. */
   close(): void {
     if (this.pingInterval) clearInterval(this.pingInterval);
+
+    // Fire onInactive for all live channels so the provider can clean up.
+    for (const channel of this.channelSubscribers.keys()) {
+      this.onChannelInactive?.(channel);
+    }
+
     for (const client of this.clients.values()) {
       client.ws.terminate();
     }
@@ -285,12 +322,21 @@ export class WebSocketManager {
       return;
     }
 
+    // Determine whether this is the first subscriber (used to fire onActive).
+    const existing = this.channelSubscribers.get(channel);
+    const isFirstSubscriber = !existing || existing.size === 0;
+
     client.subscriptions.add(channel);
 
     if (!this.channelSubscribers.has(channel)) {
       this.channelSubscribers.set(channel, new Set());
     }
     this.channelSubscribers.get(channel)!.add(client.id);
+
+    // Notify the streaming bridge that this channel is now active.
+    if (isFirstSubscriber) {
+      this.onChannelActive?.(channel);
+    }
 
     this.sendRaw(client.ws, {
       type: "ack",
@@ -301,12 +347,7 @@ export class WebSocketManager {
 
   private unsubscribe(client: ClientState, channel: string): void {
     client.subscriptions.delete(channel);
-    const subs = this.channelSubscribers.get(channel);
-    if (subs) {
-      subs.delete(client.id);
-      // Prune empty channel entries to prevent unbounded map growth.
-      if (subs.size === 0) this.channelSubscribers.delete(channel);
-    }
+    this.pruneClientFromChannel(client.id, channel);
 
     this.sendRaw(client.ws, {
       type: "ack",
@@ -320,13 +361,27 @@ export class WebSocketManager {
     if (!client) return;
 
     for (const channel of client.subscriptions) {
-      const subs = this.channelSubscribers.get(channel);
-      if (subs) {
-        subs.delete(id);
-        if (subs.size === 0) this.channelSubscribers.delete(channel);
-      }
+      this.pruneClientFromChannel(id, channel);
     }
     this.clients.delete(id);
+  }
+
+  /**
+   * Remove a client from a channel's subscriber set.
+   * Fires onInactive if the channel becomes empty.
+   */
+  private pruneClientFromChannel(clientId: string, channel: string): void {
+    const subs = this.channelSubscribers.get(channel);
+    if (!subs) return;
+
+    subs.delete(clientId);
+
+    if (subs.size === 0) {
+      // Prune empty channel entries to prevent unbounded map growth.
+      this.channelSubscribers.delete(channel);
+      // Notify the streaming bridge that this channel is now inactive.
+      this.onChannelInactive?.(channel);
+    }
   }
 
   private pingAll(): void {

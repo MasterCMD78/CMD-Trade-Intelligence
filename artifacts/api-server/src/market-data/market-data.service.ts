@@ -7,7 +7,7 @@
  * To switch providers: call `setProvider(new BinanceProvider(...))` and reconnect.
  */
 
-import type { IMarketDataProvider } from "./provider.interface.js";
+import type { IMarketDataProvider, PriceTickHandler } from "./provider.interface.js";
 import type { MarketSymbol, MarketPrice, MarketCandle } from "./types.js";
 import { Timeframe, TIMEFRAME_LABELS, ALL_TIMEFRAMES } from "./types.js";
 import { MockMarketDataProvider } from "./mock.provider.js";
@@ -80,6 +80,17 @@ class MarketDataService {
 
   async getCandles(symbol: string, timeframe: Timeframe, limit = 100): Promise<MarketCandle[]> {
     return this.provider.getCandles(symbol, timeframe, limit);
+  }
+
+  // ─── Real-time tick streaming ───────────────────────────────────────────────
+
+  /**
+   * Subscribe to live price ticks for a symbol.
+   * Delegates directly to the active provider.
+   * Returns an unsubscribe function — call it to stop the subscription.
+   */
+  subscribeTicks(symbol: string, handler: PriceTickHandler): () => void {
+    return this.provider.subscribeTicks(symbol, handler);
   }
 
   // ─── Lifecycle ─────────────────────────────────────────────────────────────

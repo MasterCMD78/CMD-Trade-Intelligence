@@ -7,6 +7,12 @@
  *
  * Candle ordering: oldest → newest (index 0 = oldest candle, last index = current forming candle).
  * No real network calls are made. No AI signals or predictions are generated.
+ *
+ * Tick streaming:
+ *   subscribeTicks() emits a live price tick on a per-symbol interval (500 ms for crypto,
+ *   1 000 ms for forex).  Multiple handlers on the same symbol share a single interval —
+ *   no timer buildup occurs regardless of how many WebSocket clients subscribe.
+ *   All intervals are cleared on disconnect().
  */
 
 import type { IMarketDataProvider, PriceTickHandler, CandleUpdateHandler } from "./provider.interface.js";
@@ -80,12 +86,25 @@ const TF_MINUTES: Record<Timeframe, number> = {
   [Timeframe.H1]: 60, [Timeframe.H4]: 240, [Timeframe.D1]: 1440, [Timeframe.W1]: 10080,
 };
 
-/** Volatility parameters per asset class (annualised daily basis point range). */
+/** Volatility parameters per asset class (used for both candles and tick streaming). */
 const VOLATILITY_BY_ASSET_CLASS: Record<AssetClass, number> = {
   forex:       0.0006,   // ~0.06% per minute — FX majors
   crypto:      0.005,    // ~0.5% per minute — crypto
   indices:     0.0008,
   commodities: 0.001,
+};
+
+/**
+ * Per-tick volatility (fraction of mid price), tuned so that successive ticks
+ * show realistic micro-movement without drifting far from the base price.
+ * Forex:  ±0.008% per tick  (1 s interval)
+ * Crypto: ±0.025% per tick  (0.5 s interval)
+ */
+const TICK_VOLATILITY: Record<AssetClass, number> = {
+  forex:       0.000080,
+  crypto:      0.000250,
+  indices:     0.000100,
+  commodities: 0.000120,
 };
 
 /** Deterministic pseudo-random value in [0, 1) from a seed. */
@@ -162,6 +181,23 @@ function generateCandles(
   return candles;
 }
 
+// ─── Tick stream state ────────────────────────────────────────────────────────
+
+interface TickStream {
+  /** All handlers subscribed to this symbol. Shared single interval. */
+  handlers: Set<PriceTickHandler>;
+  /** The setInterval handle — cleared when the last handler unsubscribes. */
+  interval: ReturnType<typeof setInterval>;
+  /** Current mid price — mutated on each tick. */
+  currentMid: number;
+  /** Half-spread used to compute bid/ask from mid. */
+  halfSpread: number;
+  /** Decimal precision for display rounding. */
+  precision: number;
+  /** Static 24 h stats — unchanged during a session. */
+  baseQuote: MockQuoteBase;
+}
+
 // ─── Provider implementation ──────────────────────────────────────────────────
 
 export class MockMarketDataProvider implements IMarketDataProvider {
@@ -170,11 +206,22 @@ export class MockMarketDataProvider implements IMarketDataProvider {
 
   private _connected = false;
 
+  /**
+   * Active tick streaming intervals, keyed by symbol.
+   * Multiple handlers on the same symbol share one interval (no timer buildup).
+   */
+  private _tickStreams = new Map<string, TickStream>();
+
   async connect(): Promise<void> {
     this._connected = true;
   }
 
   async disconnect(): Promise<void> {
+    // Clear all active tick intervals to prevent timer buildup across reconnects.
+    for (const stream of this._tickStreams.values()) {
+      clearInterval(stream.interval);
+    }
+    this._tickStreams.clear();
     this._connected = false;
   }
 
@@ -201,12 +248,23 @@ export class MockMarketDataProvider implements IMarketDataProvider {
     const q = MOCK_QUOTES[sym];
     if (!q) throw new Error(`Symbol not found: ${symbol}`);
     const mid = (q.bid + q.ask) / 2;
+
+    // If a live tick stream is running, return the drifted current mid price
+    // so that the REST snapshot is consistent with the WS feed.
+    const stream = this._tickStreams.get(sym);
+    const liveMid = stream ? stream.currentMid : mid;
+    const halfSpread = stream ? stream.halfSpread : (q.ask - q.bid) / 2;
+    const precision = SYMBOL_MAP.get(sym)?.precision ?? 5;
+
+    const bid = liveMid - halfSpread;
+    const ask = liveMid + halfSpread;
+
     return {
       symbol:       sym,
-      bid:          q.bid,
-      ask:          q.ask,
-      mid:          +mid.toFixed(8),
-      spread:       +(q.ask - q.bid).toFixed(8),
+      bid:          +bid.toFixed(precision + 1),
+      ask:          +ask.toFixed(precision + 1),
+      mid:          +liveMid.toFixed(precision + 1),
+      spread:       +(ask - bid).toFixed(precision + 2),
       change24h:    q.change24h,
       changePct24h: q.changePct24h,
       high24h:      q.high24h,
@@ -224,12 +282,93 @@ export class MockMarketDataProvider implements IMarketDataProvider {
     return generateCandles(sym, meta.assetClass, timeframe, Math.min(limit, 500));
   }
 
-  /** Stub: real-time subscriptions are a no-op in mock mode. */
-  subscribeTicks(_symbol: string, _handler: PriceTickHandler): () => void {
-    return () => {};
+  /**
+   * Subscribe to live simulated price ticks for a symbol.
+   *
+   * All handlers for the same symbol share a single setInterval — subscribing
+   * N times creates exactly one timer per symbol, not N timers.
+   * Returns an unsubscribe function; when the last handler unsubscribes the
+   * interval is cleared immediately (no lingering timers).
+   */
+  subscribeTicks(symbol: string, handler: PriceTickHandler): () => void {
+    const sym = symbol.toUpperCase();
+    const q = MOCK_QUOTES[sym];
+    const meta = SYMBOL_MAP.get(sym);
+    if (!q || !meta) return () => {};
+
+    let stream = this._tickStreams.get(sym);
+
+    if (!stream) {
+      const mid = (q.bid + q.ask) / 2;
+      const halfSpread = (q.ask - q.bid) / 2;
+      const precision = meta.precision;
+      const tickVol = TICK_VOLATILITY[meta.assetClass];
+      // Crypto ticks are faster (more liquid, higher volatility perception)
+      const intervalMs = meta.assetClass === "crypto" ? 500 : 1000;
+
+      const newStream: TickStream = {
+        handlers:   new Set(),
+        interval:   null as unknown as ReturnType<typeof setInterval>,
+        currentMid: mid,
+        halfSpread,
+        precision,
+        baseQuote:  q,
+      };
+
+      newStream.interval = setInterval(() => {
+        const s = this._tickStreams.get(sym);
+        if (!s || s.handlers.size === 0) return;
+
+        // Gaussian-approximated random walk: sum of two uniform draws ≈ normal.
+        const noise = (Math.random() + Math.random() - 1.0) * tickVol * s.currentMid;
+        s.currentMid += noise;
+
+        const bid = s.currentMid - s.halfSpread;
+        const ask = s.currentMid + s.halfSpread;
+
+        const tick: MarketPrice = {
+          symbol:       sym,
+          bid:          +bid.toFixed(s.precision + 1),
+          ask:          +ask.toFixed(s.precision + 1),
+          mid:          +s.currentMid.toFixed(s.precision + 1),
+          spread:       +(ask - bid).toFixed(s.precision + 2),
+          change24h:    s.baseQuote.change24h,
+          changePct24h: s.baseQuote.changePct24h,
+          high24h:      s.baseQuote.high24h,
+          low24h:       s.baseQuote.low24h,
+          volume24h:    s.baseQuote.volume24h,
+          timestamp:    new Date(),
+          source:       "MockProvider",
+        };
+
+        for (const h of s.handlers) {
+          try { h(tick); } catch { /* never let a bad handler kill the stream */ }
+        }
+      }, intervalMs);
+
+      this._tickStreams.set(sym, newStream);
+      stream = newStream;
+    }
+
+    stream.handlers.add(handler);
+
+    return () => {
+      const s = this._tickStreams.get(sym);
+      if (!s) return;
+      s.handlers.delete(handler);
+      if (s.handlers.size === 0) {
+        clearInterval(s.interval);
+        this._tickStreams.delete(sym);
+      }
+    };
   }
 
-  subscribeCandles(_symbol: string, _timeframe: Timeframe, _handler: CandleUpdateHandler): () => void {
+  /** Candle streaming is not simulated in mock mode. */
+  subscribeCandles(
+    _symbol: string,
+    _timeframe: Timeframe,
+    _handler: CandleUpdateHandler,
+  ): () => void {
     return () => {};
   }
 }
