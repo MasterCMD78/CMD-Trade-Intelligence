@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { Route, Switch, Router as WouterRouter, Redirect, useLocation } from 'wouter';
+import { Route, Switch, Router as WouterRouter, Redirect } from 'wouter';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { AppLayout } from '@/layouts/AppLayout';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
@@ -40,7 +41,9 @@ function ProtectedRoute({ component: Component, adminOnly = false }: { component
 
   return (
     <AppLayout>
-      <Component />
+      <ErrorBoundary>
+        <Component />
+      </ErrorBoundary>
     </AppLayout>
   );
 }
@@ -57,6 +60,7 @@ function Router() {
         {isAuthenticated ? <Redirect to="/dashboard" /> : <Register />}
       </Route>
       
+      {/* Root redirects to dashboard; ProtectedRoute redirects to /login if not authed */}
       <Route path="/">
         <Redirect to="/dashboard" />
       </Route>
@@ -96,16 +100,18 @@ function Router() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <AuthProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-            <Router />
-          </WouterRouter>
-        </AuthProvider>
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <AuthProvider>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+              <Router />
+            </WouterRouter>
+          </AuthProvider>
+          <Toaster />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

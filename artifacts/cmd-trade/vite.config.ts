@@ -72,6 +72,19 @@ export default defineConfig({
     fs: {
       strict: true,
     },
+    // In development, proxy /api and /ws to the API server so relative URLs
+    // work both through the Replit reverse proxy and when hitting Vite directly.
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/ws': {
+        target: 'ws://localhost:8080',
+        ws: true,
+        changeOrigin: true,
+      },
+    },
   },
   preview: {
     port,

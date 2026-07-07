@@ -2,3 +2,5 @@
 - [TanStack Query v5 + Orval options typing](tanstack-orval-options.md) — passing partial query options to generated hooks requires `as any`; generated hooks enforce full `UseQueryOptions` including `queryKey`
 - [MarketQuote extended fields](market-quote-fields.md) — `/markets/{symbol}` returns symbol metadata (assetClass, displayName, precision, tradingHours) merged into the quote; OpenAPI spec must declare all fields
 - [WS channel validation](ws-channel-validation.md) — subscribe() validates format (tick|candle + uppercase symbol 3-12 chars + valid timeframe); cap 50 subs/client; prevents memory DoS
+- [Storage hardening for sandboxed iframes](storage-iframe-hardening.md) — localStorage throws SecurityError in some Replit iframe contexts; always use src/lib/storage.ts safe wrapper
+- [Vite dev proxy for API and WebSocket](vite-dev-proxy.md) — server.proxy in vite.config.ts forwards /api and /ws to :8080; required for consistent behaviour in dev

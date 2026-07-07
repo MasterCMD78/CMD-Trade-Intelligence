@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
+import { storage } from '@/lib/storage';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -69,7 +70,7 @@ export function useMarketWebSocket(
   const connect = useCallback(() => {
     if (unmountedRef.current) return;
 
-    const token = localStorage.getItem('cmd_token');
+    const token = storage.get('cmd_token');
     if (!token) {
       setStatus('error');
       return;

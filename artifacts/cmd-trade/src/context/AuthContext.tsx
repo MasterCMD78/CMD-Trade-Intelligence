@@ -1,13 +1,15 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { User, AuthResponse, setAuthTokenGetter, setTokenRefreshHandler } from '@workspace/api-client-react';
+import { storage } from '@/lib/storage';
 
 const TOKEN_KEY = 'cmd_token';
 const REFRESH_KEY = 'cmd_refresh';
 const USER_KEY = 'cmd_user';
 
-// Wire the API client to read the stored access token from localStorage on every request.
-// This must run once at module load, before any authenticated query fires.
-setAuthTokenGetter(() => localStorage.getItem(TOKEN_KEY));
+// Wire the API client to read the stored access token from localStorage on
+// every request.  Uses the safe storage wrapper so this never throws even in
+// sandboxed iframe contexts.
+setAuthTokenGetter(() => storage.get(TOKEN_KEY));
 
 interface AuthContextType {
   user: User | null;
@@ -19,6 +21,24 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+// ─── Loading screen ───────────────────────────────────────────────────────────
+// Shown for the brief moment between the first render and the session-restore
+// effect — prevents a blank white flash.
+function AuthLoadingScreen() {
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+        <p className="text-muted-foreground text-xs font-mono tracking-widest uppercase">
+          Initialising…
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Provider ─────────────────────────────────────────────────────────────────
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -28,26 +48,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const login = useCallback((data: AuthResponse) => {
     setUser(data.user);
     setToken(data.accessToken);
-    localStorage.setItem(USER_KEY, JSON.stringify(data.user));
-    localStorage.setItem(TOKEN_KEY, data.accessToken);
-    localStorage.setItem(REFRESH_KEY, data.refreshToken);
+    storage.set(USER_KEY, JSON.stringify(data.user));
+    storage.set(TOKEN_KEY, data.accessToken);
+    storage.set(REFRESH_KEY, data.refreshToken);
   }, []);
 
   const logout = useCallback(() => {
     setUser(null);
     setToken(null);
-    localStorage.removeItem(USER_KEY);
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(REFRESH_KEY);
+    storage.clear(USER_KEY, TOKEN_KEY, REFRESH_KEY);
   }, []);
 
   // Register the 401 auto-refresh handler with the API client.
-  // The handler is called whenever a request returns 401; it uses the stored
-  // refresh token to obtain a new access token, updates localStorage/state,
-  // and returns the new token so the original request can be retried.
   useEffect(() => {
     setTokenRefreshHandler(async () => {
-      const storedRefresh = localStorage.getItem(REFRESH_KEY);
+      const storedRefresh = storage.get(REFRESH_KEY);
       if (!storedRefresh) return null;
 
       try {
@@ -58,44 +73,46 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         });
         if (!res.ok) throw new Error('Refresh failed');
         const data: AuthResponse = await res.json();
-        // Update persisted tokens and React state.
-        localStorage.setItem(TOKEN_KEY, data.accessToken);
-        localStorage.setItem(REFRESH_KEY, data.refreshToken);
-        localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+        storage.set(TOKEN_KEY, data.accessToken);
+        storage.set(REFRESH_KEY, data.refreshToken);
+        storage.set(USER_KEY, JSON.stringify(data.user));
         setUser(data.user);
         setToken(data.accessToken);
         return data.accessToken;
       } catch {
-        // Refresh failed — clear session and force re-login.
         logout();
         return null;
       }
     });
 
     return () => {
-      // Clear the handler when the provider unmounts (edge case: hot reload).
       setTokenRefreshHandler(null);
     };
   }, [logout]);
 
-  // Restore session from localStorage on first mount.
+  // Restore session from storage on first mount.
+  // Always calls setIsReady(true) — even on error — so the app never hangs.
   useEffect(() => {
-    const storedUser = localStorage.getItem(USER_KEY);
-    const storedToken = localStorage.getItem(TOKEN_KEY);
-    if (storedUser && storedToken) {
-      try {
-        setUser(JSON.parse(storedUser));
+    try {
+      const storedUser = storage.get(USER_KEY);
+      const storedToken = storage.get(TOKEN_KEY);
+      if (storedUser && storedToken) {
+        const parsed = JSON.parse(storedUser) as User;
+        setUser(parsed);
         setToken(storedToken);
-      } catch {
-        localStorage.removeItem(USER_KEY);
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(REFRESH_KEY);
       }
+    } catch {
+      // Malformed storage — clear it and start fresh.
+      storage.clear(USER_KEY, TOKEN_KEY, REFRESH_KEY);
+    } finally {
+      setIsReady(true);
     }
-    setIsReady(true);
   }, []);
 
-  if (!isReady) return null;
+  // Show a loading screen instead of null — prevents a blank white flash.
+  if (!isReady) {
+    return <AuthLoadingScreen />;
+  }
 
   return (
     <AuthContext.Provider value={{ user, token, isAuthenticated: !!token, login, logout }}>
