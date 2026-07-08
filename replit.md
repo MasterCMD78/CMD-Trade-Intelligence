@@ -63,9 +63,10 @@ _Populate as you build — explicit user instructions worth remembering across s
 - JWT secrets have development fallbacks — always set real secrets before deploying to production.
 - `DATABASE_URL` is auto-provisioned by Replit; do not set it manually.
 - Access tokens expire in 15 minutes; the frontend refresh token flow is not yet wired up — users must re-login after expiry until this is implemented.
+- Running `pnpm run build` at the repo root also builds the `mockup-sandbox` canvas artifact, whose Vite config requires `PORT`/`BASE_PATH` even at build time; if invoking the root build manually outside its managed workflow, prefix with `PORT=8081 BASE_PATH=/__mockup`.
 
 ## Replit Setup Notes
 
 - Dependencies installed with `pnpm install` on first setup.
 - Database schema pushed with `pnpm --filter @workspace/db run push` (Drizzle Kit).
-- Two managed workflows: `artifacts/api-server: API Server` (Express) and `artifacts/cmd-trade: web` (Vite). Both must be running for the full app to work.
+- Three managed workflows: `artifacts/api-server: API Server` (Express), `artifacts/cmd-trade: web` (Vite), and `artifacts/mockup-sandbox: Component Preview Server` (canvas previews, auto-managed). All should be running for the full app + canvas tooling to work.
