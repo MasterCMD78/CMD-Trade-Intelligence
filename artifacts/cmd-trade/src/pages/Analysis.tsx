@@ -1,93 +1,607 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useGetMarkets, useGetTimeframes } from '@workspace/api-client-react';
+import { useAuth } from '@/context/AuthContext';
+import { useMarketWebSocket } from '@/hooks/useMarketWebSocket';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { BrainCircuit, Database, FileSearch, LineChart, Code2 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  BrainCircuit, TrendingUp, TrendingDown, Minus,
+  RefreshCw, AlertTriangle, CheckCircle, Shield,
+  Activity, BarChart2, Layers, Eye, Clock,
+} from 'lucide-react';
+
+// ─── Types matching the API ───────────────────────────────────────────────────
+
+type Decision = 'BUY' | 'SELL' | 'HOLD';
+type RiskLevel = 'low' | 'medium' | 'high';
+type TrendDir = 'bullish' | 'bearish' | 'sideways';
+type Signal = 'buy' | 'sell' | 'neutral';
+
+interface AnalysisResult {
+  symbol: string;
+  timeframe: string;
+  timestamp: string;
+  candleCount: number;
+  decision: Decision;
+  confidence: number;
+  riskLevel: RiskLevel;
+  trend: TrendDir;
+  entryPrice: number;
+  stopLoss: number;
+  takeProfit: number;
+  riskRewardRatio: number;
+  indicators: {
+    rsi:           { value: number; signal: Signal; overbought: boolean; oversold: boolean };
+    macd:          { macdLine: number; signalLine: number; histogram: number; crossover: string; signal: Signal };
+    ema:           { ema20: number; ema50: number; ema200: number; trend: TrendDir; signal: Signal; priceAboveEma20: boolean; priceAboveEma50: boolean; priceAboveEma200: boolean };
+    sma:           { sma20: number; sma50: number };
+    bollingerBands:{ upper: number; middle: number; lower: number; pctB: number; width: number; signal: Signal };
+    atr:           { value: number; pctOfPrice: number; volatility: string };
+    adx:           { adx: number; plusDI: number; minusDI: number; trending: boolean; signal: Signal };
+    stochasticRsi: { k: number; d: number; signal: Signal; overbought: boolean; oversold: boolean };
+    volume:        { current: number; average: number; ratio: number; spike: boolean; trend: string; signal: Signal };
+    trend:         { shortTerm: TrendDir; mediumTerm: TrendDir; longTerm: TrendDir; overall: TrendDir; signal: Signal };
+    supportResistance: { supports: number[]; resistances: number[]; nearestSupport: number | null; nearestResistance: number | null };
+  };
+  patterns: Array<{ name: string; type: 'bullish' | 'bearish' | 'neutral'; strength: number; description: string }>;
+  reasons: string[];
+}
+
+// ─── Fetch hook ───────────────────────────────────────────────────────────────
+
+function useAnalysis(symbol: string, timeframe: string, enabled: boolean) {
+  const { token } = useAuth();
+  return useQuery<AnalysisResult>({
+    queryKey: ['analysis', symbol, timeframe],
+    queryFn: async () => {
+      const res = await fetch(`/api/analysis/${symbol}?timeframe=${timeframe}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+      }
+      return res.json() as Promise<AnalysisResult>;
+    },
+    enabled: enabled && !!token && !!symbol,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+  });
+}
+
+// ─── Visual helpers ───────────────────────────────────────────────────────────
+
+const DECISION_CONFIG = {
+  BUY:  { label: 'BUY',  color: 'text-emerald-400', bg: 'bg-emerald-400/10 border-emerald-400/30', icon: TrendingUp },
+  SELL: { label: 'SELL', color: 'text-red-400',     bg: 'bg-red-400/10 border-red-400/30',         icon: TrendingDown },
+  HOLD: { label: 'HOLD', color: 'text-yellow-400',  bg: 'bg-yellow-400/10 border-yellow-400/30',   icon: Minus },
+} as const;
+
+const RISK_CONFIG = {
+  low:    { label: 'Low Risk',    color: 'text-emerald-400', bg: 'bg-emerald-400/10 border-emerald-400/30' },
+  medium: { label: 'Medium Risk', color: 'text-yellow-400',  bg: 'bg-yellow-400/10 border-yellow-400/30' },
+  high:   { label: 'High Risk',   color: 'text-red-400',     bg: 'bg-red-400/10 border-red-400/30' },
+} as const;
+
+const TREND_CONFIG = {
+  bullish:  { label: 'Bullish',  color: 'text-emerald-400', icon: TrendingUp },
+  bearish:  { label: 'Bearish',  color: 'text-red-400',     icon: TrendingDown },
+  sideways: { label: 'Sideways', color: 'text-yellow-400',  icon: Minus },
+} as const;
+
+const SIGNAL_COLOR: Record<Signal, string> = {
+  buy:     'text-emerald-400',
+  sell:    'text-red-400',
+  neutral: 'text-muted-foreground',
+};
+
+function signalBadge(signal: Signal) {
+  const labels: Record<Signal, string> = { buy: 'BUY', sell: 'SELL', neutral: 'NEUTRAL' };
+  return (
+    <span className={`font-mono text-xs font-semibold ${SIGNAL_COLOR[signal]}`}>
+      {labels[signal]}
+    </span>
+  );
+}
+
+function formatPrice(n: number, decimals = 5) {
+  if (n === undefined || n === null) return '—';
+  return n.toFixed(decimals);
+}
+
+function pct(n: number) { return `${(n * 100).toFixed(2)}%`; }
+
+// ─── Confidence gauge ─────────────────────────────────────────────────────────
+
+function ConfidenceGauge({ value, decision }: { value: number; decision: Decision }) {
+  const color =
+    decision === 'BUY'  ? '#34d399' :
+    decision === 'SELL' ? '#f87171' : '#facc15';
+  const r = 36, cx = 44, cy = 44;
+  const circumference = 2 * Math.PI * r;
+  const filled = circumference * (value / 100);
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <svg width={88} height={88} className="-rotate-90">
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="hsl(var(--muted))" strokeWidth={8} />
+        <circle
+          cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={8}
+          strokeDasharray={`${filled} ${circumference}`}
+          strokeLinecap="round" style={{ transition: 'stroke-dasharray 0.6s ease' }}
+        />
+      </svg>
+      <span className="font-mono text-2xl font-bold -mt-14" style={{ color }}>{value}%</span>
+      <span className="font-mono text-xs text-muted-foreground mt-8">Confidence</span>
+    </div>
+  );
+}
+
+// ─── Stat card ────────────────────────────────────────────────────────────────
+
+function StatCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: string }) {
+  return (
+    <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
+      <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className={`font-mono text-lg font-bold ${accent ?? 'text-foreground'}`}>{value}</span>
+      {sub && <span className="font-mono text-xs text-muted-foreground">{sub}</span>}
+    </div>
+  );
+}
+
+// ─── Indicator row ────────────────────────────────────────────────────────────
+
+function IndRow({ label, value, signal, extra }: { label: string; value: string; signal?: Signal; extra?: string }) {
+  return (
+    <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/40 last:border-0">
+      <span className="font-mono text-xs text-muted-foreground w-40 shrink-0">{label}</span>
+      <span className="font-mono text-xs font-semibold text-foreground text-right">{value}</span>
+      {signal && (
+        <span className="ml-4 min-w-16 text-right">{signalBadge(signal)}</span>
+      )}
+      {extra && (
+        <span className="ml-4 font-mono text-xs text-muted-foreground text-right">{extra}</span>
+      )}
+    </div>
+  );
+}
+
+// ─── Trend pill ───────────────────────────────────────────────────────────────
+
+function TrendPill({ dir }: { dir: TrendDir }) {
+  const cfg = TREND_CONFIG[dir];
+  const Icon = cfg.icon;
+  return (
+    <span className={`flex items-center gap-1 font-mono text-xs ${cfg.color}`}>
+      <Icon className="h-3.5 w-3.5" />{cfg.label}
+    </span>
+  );
+}
+
+// ─── Loading skeleton ─────────────────────────────────────────────────────────
+
+function AnalysisSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-lg" />)}
+      </div>
+      <Skeleton className="h-48 rounded-lg" />
+      <Skeleton className="h-64 rounded-lg" />
+    </div>
+  );
+}
+
+// ─── Main Analysis page ───────────────────────────────────────────────────────
 
 export default function Analysis() {
-  const modules = [
-    {
-      id: 'data',
-      name: 'Market Data Ingestion',
-      description: 'High-frequency normalization of multi-exchange order books and trades.',
-      icon: Database,
-      status: 'Building',
-    },
-    {
-      id: 'pattern',
-      name: 'Pattern Detection',
-      description: 'Real-time identification of technical structures and order flow anomalies.',
-      icon: LineChart,
-      status: 'Building',
-    },
-    {
-      id: 'confidence',
-      name: 'Confidence Engine',
-      description: 'Probabilistic modeling to score setups based on historical precedents.',
-      icon: FileSearch,
-      status: 'Building',
-    },
-    {
-      id: 'explain',
-      name: 'Explainability Core',
-      description: 'Translates model weights into human-readable rationale for trade execution.',
-      icon: Code2,
-      status: 'Building',
-    }
-  ];
+  const [symbol, setSymbol]     = useState('EURUSD');
+  const [timeframe, setTimeframe] = useState('1H');
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [secsAgo, setSecsAgo]   = useState(0);
+
+  const { data: symbolList = [] } = useGetMarkets({});
+  const { data: tfData }          = useGetTimeframes();
+
+  // Subscribe to WS tick for the selected symbol — used to show live price
+  // and trigger a background re-analysis when a tick arrives.
+  const { ticks } = useMarketWebSocket([symbol], true);
+  const tick = ticks[symbol];
+
+  const { data, isLoading, isFetching, error, refetch, dataUpdatedAt } = useAnalysis(
+    symbol, timeframe, autoRefresh,
+  );
+
+  // "Updated N seconds ago" counter.
+  useEffect(() => {
+    if (!dataUpdatedAt) return;
+    const tick = setInterval(() => {
+      setSecsAgo(Math.floor((Date.now() - dataUpdatedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [dataUpdatedAt]);
+
+  const handleRefresh = useCallback(() => { void refetch(); }, [refetch]);
+
+  const timeframes = tfData?.timeframes ?? [];
 
   return (
     <div className="space-y-6">
-      <div className="p-8 bg-muted/30 border border-border rounded-lg relative overflow-hidden">
-        <div className="absolute right-0 top-0 opacity-10">
-          <BrainCircuit className="h-64 w-64 -mt-10 -mr-10" />
-        </div>
-        <div className="relative z-10">
-          <h2 className="text-3xl font-bold tracking-tight mb-2">AI Analysis Engine</h2>
-          <p className="text-muted-foreground max-w-2xl text-lg">
-            The quantitative modeling core is currently under active development. 
-            Once deployed, this subsystem will provide deep-learning powered market insights.
-          </p>
-        </div>
-      </div>
+      {/* ── Controls ── */}
+      <Card className="bg-card border-border shadow-sm">
+        <CardContent className="pt-5 pb-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 flex-wrap">
+            {/* Symbol selector */}
+            <div className="flex flex-col gap-1">
+              <label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Symbol</label>
+              <select
+                value={symbol}
+                onChange={(e) => setSymbol(e.target.value)}
+                className="bg-muted border border-border text-foreground font-mono text-sm rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                {symbolList.length === 0
+                  ? <option value={symbol}>{symbol}</option>
+                  : symbolList.map((s) => (
+                      <option key={s.symbol} value={s.symbol}>{s.displayName} ({s.assetClass})</option>
+                    ))
+                }
+              </select>
+            </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {modules.map((module, i) => (
+            {/* Timeframe buttons */}
+            <div className="flex flex-col gap-1">
+              <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Timeframe</span>
+              <div className="flex gap-1 flex-wrap">
+                {(timeframes.length > 0 ? timeframes : [{ value: '1H' }]).map((tf) => (
+                  <button
+                    key={tf.value}
+                    onClick={() => setTimeframe(tf.value)}
+                    className={`px-2.5 py-1.5 text-xs font-mono rounded border transition-colors ${
+                      timeframe === tf.value
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-transparent text-muted-foreground border-border hover:border-primary/50 hover:text-foreground'
+                    }`}
+                  >
+                    {tf.value}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-3 sm:ml-auto">
+              {/* Auto-refresh toggle */}
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs text-muted-foreground">Auto</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={autoRefresh}
+                  aria-label="Toggle auto-refresh"
+                  onClick={() => setAutoRefresh(!autoRefresh)}
+                  className={`w-9 h-5 rounded-full transition-colors relative focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+                    autoRefresh ? 'bg-primary' : 'bg-muted border border-border'
+                  }`}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${autoRefresh ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+
+              <button
+                onClick={handleRefresh}
+                disabled={isLoading || isFetching}
+                className="flex items-center gap-2 px-3 py-2 bg-primary text-primary-foreground text-xs font-mono rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+                Analyze
+              </button>
+            </div>
+          </div>
+
+          {/* Status bar */}
+          <div className="flex items-center gap-3 mt-3 pt-3 border-t border-border/50">
+            {tick && (
+              <span className="font-mono text-xs text-muted-foreground">
+                Live: <span className="text-emerald-400">{tick.bid.toFixed(5)}</span>
+                <span className="text-muted-foreground/50 mx-1">/</span>
+                <span className="text-accent">{tick.ask.toFixed(5)}</span>
+              </span>
+            )}
+            {dataUpdatedAt > 0 && (
+              <span className="font-mono text-xs text-muted-foreground">
+                <Clock className="h-3 w-3 inline mr-1" />
+                Updated {secsAgo}s ago
+              </span>
+            )}
+            {isFetching && (
+              <span className="font-mono text-xs text-primary animate-pulse">
+                <Activity className="h-3 w-3 inline mr-1" />
+                Analyzing…
+              </span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Error state ── */}
+      {error && !isLoading && (
+        <Card className="bg-destructive/10 border-destructive/30">
+          <CardContent className="py-4 flex items-center gap-3">
+            <AlertTriangle className="h-5 w-5 text-destructive shrink-0" />
+            <p className="font-mono text-sm text-destructive">
+              {(error as Error).message}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Loading ── */}
+      {isLoading && !data && <AnalysisSkeleton />}
+
+      {/* ── Results ── */}
+      <AnimatePresence mode="wait">
+        {data && (
           <motion.div
-            key={module.id}
-            initial={{ opacity: 0, y: 20 }}
+            key={`${data.symbol}-${data.timeframe}-${data.timestamp}`}
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: i * 0.1 }}
+            transition={{ duration: 0.3 }}
+            className="space-y-4"
           >
-            <Card className="bg-card border-border shadow-sm h-full group hover:border-primary/30 transition-colors">
-              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-muted rounded-md group-hover:bg-primary/10 transition-colors">
-                    <module.icon className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+            {/* ── Decision hero row ── */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Decision + confidence */}
+              <Card className={`md:col-span-1 border ${DECISION_CONFIG[data.decision].bg}`}>
+                <CardContent className="pt-5 pb-4 flex flex-col items-center gap-3">
+                  {(() => {
+                    const cfg = DECISION_CONFIG[data.decision];
+                    const Icon = cfg.icon;
+                    return (
+                      <>
+                        <div className={`flex items-center gap-3 ${cfg.color}`}>
+                          <Icon className="h-8 w-8" />
+                          <span className="font-bold text-4xl tracking-tight">{cfg.label}</span>
+                        </div>
+                        <ConfidenceGauge value={data.confidence} decision={data.decision} />
+                      </>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+
+              {/* Key metrics */}
+              <Card className="md:col-span-2 bg-card border-border">
+                <CardContent className="pt-5 pb-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
+                      <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Trend</span>
+                      <TrendPill dir={data.trend} />
+                      <span className="font-mono text-xs text-muted-foreground mt-1">
+                        S: <TrendPill dir={data.indicators.trend.shortTerm} />
+                      </span>
+                    </div>
+                    <div className={`flex flex-col gap-0.5 p-4 rounded-lg border ${RISK_CONFIG[data.riskLevel].bg}`}>
+                      <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Risk Level</span>
+                      <span className={`font-mono text-lg font-bold ${RISK_CONFIG[data.riskLevel].color}`}>
+                        {RISK_CONFIG[data.riskLevel].label}
+                      </span>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        ATR: {pct(data.indicators.atr.pctOfPrice)}
+                      </span>
+                    </div>
+                    <StatCard label="Entry Price" value={formatPrice(data.entryPrice)} />
+                    <StatCard label="Stop Loss"   value={formatPrice(data.stopLoss)}   accent="text-red-400" />
+                    <StatCard label="Take Profit" value={formatPrice(data.takeProfit)} accent="text-emerald-400" />
+                    <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border col-span-2 sm:col-span-3">
+                      <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Risk : Reward</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xl font-bold">1 : {data.riskRewardRatio.toFixed(2)}</span>
+                        {data.riskRewardRatio >= 2 && <CheckCircle className="h-4 w-4 text-emerald-400" />}
+                        {data.riskRewardRatio < 1.2 && data.decision !== 'HOLD' && (
+                          <AlertTriangle className="h-4 w-4 text-yellow-400" />
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <CardTitle className="text-base font-semibold">{module.name}</CardTitle>
-                </div>
-                <Badge variant="outline" className="font-mono text-[10px] uppercase bg-muted/50 text-muted-foreground">
-                  {module.status}
-                </Badge>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground mt-2">{module.description}</p>
-                
-                <div className="mt-6 pt-4 border-t border-border/50">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-                    <span className="font-mono text-xs text-muted-foreground">Compiling module weights...</span>
-                  </div>
-                  <div className="h-1 w-full bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-primary/40 w-1/3 animate-[pulse_2s_ease-in-out_infinite]" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* ── Tabs: Reasons | Indicators | Patterns ── */}
+            <Tabs defaultValue="reasons">
+              <TabsList className="bg-muted/50 border border-border">
+                <TabsTrigger value="reasons"    className="font-mono text-xs">
+                  <Eye className="h-3.5 w-3.5 mr-1.5" />Reasons ({data.reasons.length})
+                </TabsTrigger>
+                <TabsTrigger value="indicators" className="font-mono text-xs">
+                  <BarChart2 className="h-3.5 w-3.5 mr-1.5" />Indicators
+                </TabsTrigger>
+                <TabsTrigger value="patterns"   className="font-mono text-xs">
+                  <Layers className="h-3.5 w-3.5 mr-1.5" />Patterns ({data.patterns.length})
+                </TabsTrigger>
+              </TabsList>
+
+              {/* ── Reasons ── */}
+              <TabsContent value="reasons">
+                <Card className="bg-card border-border">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-mono uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                      <BrainCircuit className="h-4 w-4 text-primary" />
+                      Engine Rationale — {data.symbol} {data.timeframe}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pb-4">
+                    <ul className="space-y-2">
+                      {data.reasons.map((reason, i) => (
+                        <motion.li
+                          key={i}
+                          initial={{ opacity: 0, x: -4 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: i * 0.04 }}
+                          className="flex items-start gap-3 text-sm"
+                        >
+                          <span className="font-mono text-xs text-primary mt-0.5 shrink-0">{String(i + 1).padStart(2, '0')}</span>
+                          <span className="text-foreground/80">{reason}</span>
+                        </motion.li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* ── Indicators ── */}
+              <TabsContent value="indicators">
+                <Card className="bg-card border-border">
+                  <CardContent className="p-0">
+                    <div className="divide-y divide-border/30">
+                      {/* RSI */}
+                      <IndRow label="RSI (14)" value={`${data.indicators.rsi.value}`} signal={data.indicators.rsi.signal}
+                        extra={data.indicators.rsi.overbought ? 'Overbought' : data.indicators.rsi.oversold ? 'Oversold' : 'Neutral'} />
+
+                      {/* MACD */}
+                      <IndRow label="MACD Line"    value={data.indicators.macd.macdLine.toFixed(6)}    signal={data.indicators.macd.signal} />
+                      <IndRow label="MACD Signal"  value={data.indicators.macd.signalLine.toFixed(6)}  extra={data.indicators.macd.crossover !== 'none' ? `${data.indicators.macd.crossover} crossover` : ''} />
+                      <IndRow label="MACD Hist"    value={data.indicators.macd.histogram.toFixed(6)} />
+
+                      {/* EMA */}
+                      <IndRow label="EMA 20"  value={formatPrice(data.indicators.ema.ema20)}  extra={data.indicators.ema.priceAboveEma20 ? 'Price above' : 'Price below'} />
+                      <IndRow label="EMA 50"  value={formatPrice(data.indicators.ema.ema50)}  extra={data.indicators.ema.priceAboveEma50 ? 'Price above' : 'Price below'} />
+                      <IndRow label="EMA 200" value={formatPrice(data.indicators.ema.ema200)} signal={data.indicators.ema.signal} extra={data.indicators.ema.priceAboveEma200 ? 'Price above' : 'Price below'} />
+
+                      {/* SMA */}
+                      <IndRow label="SMA 20" value={formatPrice(data.indicators.sma.sma20)} />
+                      <IndRow label="SMA 50" value={formatPrice(data.indicators.sma.sma50)} />
+
+                      {/* Bollinger */}
+                      <IndRow label="BB Upper"  value={formatPrice(data.indicators.bollingerBands.upper)} />
+                      <IndRow label="BB Middle" value={formatPrice(data.indicators.bollingerBands.middle)} />
+                      <IndRow label="BB Lower"  value={formatPrice(data.indicators.bollingerBands.lower)} signal={data.indicators.bollingerBands.signal} extra={`%B ${(data.indicators.bollingerBands.pctB * 100).toFixed(0)}%`} />
+
+                      {/* ATR */}
+                      <IndRow label="ATR (14)" value={data.indicators.atr.value.toFixed(6)} extra={`${pct(data.indicators.atr.pctOfPrice)} of price · ${data.indicators.atr.volatility}`} />
+
+                      {/* ADX */}
+                      <IndRow label="ADX (14)" value={`${data.indicators.adx.adx}`} signal={data.indicators.adx.signal} extra={data.indicators.adx.trending ? 'Trending' : 'Ranging'} />
+                      <IndRow label="+DI / −DI" value={`${data.indicators.adx.plusDI} / ${data.indicators.adx.minusDI}`} />
+
+                      {/* Stochastic RSI */}
+                      <IndRow label="StochRSI %K" value={`${data.indicators.stochasticRsi.k}`} signal={data.indicators.stochasticRsi.signal}
+                        extra={data.indicators.stochasticRsi.overbought ? 'Overbought' : data.indicators.stochasticRsi.oversold ? 'Oversold' : ''} />
+                      <IndRow label="StochRSI %D" value={`${data.indicators.stochasticRsi.d}`} />
+
+                      {/* Volume */}
+                      <IndRow label="Volume"  value={data.indicators.volume.current.toLocaleString()} signal={data.indicators.volume.signal}
+                        extra={`${data.indicators.volume.ratio.toFixed(2)}× avg · ${data.indicators.volume.trend}`} />
+
+                      {/* Trend */}
+                      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/40">
+                        <span className="font-mono text-xs text-muted-foreground w-40 shrink-0">Trend (S/M/L)</span>
+                        <div className="flex gap-2">
+                          <TrendPill dir={data.indicators.trend.shortTerm} />
+                          <span className="text-muted-foreground">/</span>
+                          <TrendPill dir={data.indicators.trend.mediumTerm} />
+                          <span className="text-muted-foreground">/</span>
+                          <TrendPill dir={data.indicators.trend.longTerm} />
+                        </div>
+                      </div>
+
+                      {/* Support / Resistance */}
+                      {data.indicators.supportResistance.nearestSupport !== null && (
+                        <IndRow label="Nearest Support"    value={formatPrice(data.indicators.supportResistance.nearestSupport)} extra="↑ support" />
+                      )}
+                      {data.indicators.supportResistance.nearestResistance !== null && (
+                        <IndRow label="Nearest Resistance" value={formatPrice(data.indicators.supportResistance.nearestResistance)} extra="↑ resistance" />
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* ── Patterns ── */}
+              <TabsContent value="patterns">
+                <Card className="bg-card border-border">
+                  <CardContent className="pt-4 pb-4">
+                    {data.patterns.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground font-mono text-sm">
+                        No candlestick patterns detected on the last 3 candles.
+                      </div>
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {data.patterns.map((p, i) => (
+                          <motion.div
+                            key={i}
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.08 }}
+                            className={`p-4 rounded-lg border ${
+                              p.type === 'bullish' ? 'bg-emerald-400/5 border-emerald-400/20' :
+                              p.type === 'bearish' ? 'bg-red-400/5 border-red-400/20' :
+                              'bg-muted/30 border-border'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="font-mono font-semibold text-sm">{p.name}</span>
+                              <div className="flex items-center gap-2">
+                                <Badge
+                                  variant="outline"
+                                  className={`font-mono text-xs ${
+                                    p.type === 'bullish' ? 'text-emerald-400 border-emerald-400/30' :
+                                    p.type === 'bearish' ? 'text-red-400 border-red-400/30' :
+                                    'text-muted-foreground'
+                                  }`}
+                                >
+                                  {p.type.toUpperCase()}
+                                </Badge>
+                                <span className="font-mono text-xs text-muted-foreground">
+                                  {Math.round(p.strength * 100)}%
+                                </span>
+                              </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground">{p.description}</p>
+                            {/* Strength bar */}
+                            <div className="mt-2 h-1 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${
+                                  p.type === 'bullish' ? 'bg-emerald-400' :
+                                  p.type === 'bearish' ? 'bg-red-400' : 'bg-muted-foreground'
+                                }`}
+                                style={{ width: `${p.strength * 100}%` }}
+                              />
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+
+            {/* ── Footer ── */}
+            <p className="font-mono text-xs text-muted-foreground text-center">
+              Analysis computed from {data.candleCount} × {data.timeframe} candles at {new Date(data.timestamp).toLocaleTimeString()}.
+              For informational purposes only — not financial advice.
+            </p>
           </motion.div>
-        ))}
-      </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Empty state (no data, not loading, no error) ── */}
+      {!data && !isLoading && !error && (
+        <Card className="bg-card border-border border-dashed">
+          <CardContent className="py-16 text-center">
+            <BrainCircuit className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
+            <p className="font-mono text-sm text-muted-foreground">
+              Select a symbol and timeframe, then click <strong>Analyze</strong>.
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
