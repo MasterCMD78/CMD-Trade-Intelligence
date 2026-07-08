@@ -21,7 +21,9 @@
 
 import type { MarketCandle } from "../market-data/types.js";
 import { Timeframe }         from "../market-data/types.js";
-import type { AnalysisResult, IndicatorSet, CandlestickPattern } from "./types.js";
+import type { AnalysisResult, IndicatorSet, CandlestickPattern, MarketStructureSummary, TrendDirection } from "./types.js";
+import { analyzeMarketStructure } from "./market-structure/engine.js";
+import type { MarketStructureResult } from "./market-structure/types.js";
 import { computeRsi }              from "./indicators/rsi.js";
 import { computeEma }              from "./indicators/ema.js";
 import { computeSma }              from "./indicators/sma.js";
@@ -149,6 +151,36 @@ function generateReasons(
   return reasons;
 }
 
+// ─── Market Structure summary ────────────────────────────────────────────────
+
+/** HH/HL → bullish bias, LH/LL → bearish bias, no swing yet → sideways. */
+function structureDirectionFromSwing(latestSwingType: MarketStructureResult["latestSwingType"]): TrendDirection {
+  if (latestSwingType === "HH" || latestSwingType === "HL") return "bullish";
+  if (latestSwingType === "LH" || latestSwingType === "LL") return "bearish";
+  return "sideways";
+}
+
+function buildMarketStructureSummary(structure: MarketStructureResult): MarketStructureSummary {
+  return {
+    marketTrend:        structure.currentTrend,
+    structureDirection: structureDirectionFromSwing(structure.latestSwingType),
+    latestSwing:        structure.latestSwingType,
+    swingHigh:          structure.latestSwingHigh?.price ?? null,
+    swingLow:           structure.latestSwingLow?.price ?? null,
+    marketPhase:        structure.marketPhase,
+  };
+}
+
+function generateStructureReason(structure: MarketStructureSummary): string {
+  const { marketTrend, latestSwing, marketPhase } = structure;
+  if (latestSwing === null) {
+    return "Market structure: not enough swing points yet to establish a trend.";
+  }
+  const trendLabel = marketTrend === "bullish" ? "bullish" : marketTrend === "bearish" ? "bearish" : "sideways";
+  const phaseLabel = marketPhase === "trending" ? "confirmed" : marketPhase === "reversal" ? "reversing" : "ranging";
+  return `Market structure ${trendLabel} (${phaseLabel}) — latest swing is a ${latestSwing}.`;
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export interface EngineInput {
@@ -175,7 +207,9 @@ export function runAnalysis(input: EngineInput): AnalysisResult {
   const riskLevel  = computeRiskLevel(indicators);
   const trend      = deriveTrend(indicators);
   const risk       = computeRisk(decision, currentBid, currentAsk, indicators);
-  const reasons    = generateReasons(indicators, patterns, score);
+  const structure  = analyzeMarketStructure(candles, { swingLength: 2 });
+  const marketStructure = buildMarketStructureSummary(structure);
+  const reasons    = [...generateReasons(indicators, patterns, score), generateStructureReason(marketStructure)];
 
   return {
     symbol,
@@ -193,6 +227,7 @@ export function runAnalysis(input: EngineInput): AnalysisResult {
     indicators,
     patterns,
     reasons,
+    marketStructure,
   };
 }
 

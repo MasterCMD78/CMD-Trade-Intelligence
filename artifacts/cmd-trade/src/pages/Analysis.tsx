@@ -11,7 +11,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   BrainCircuit, TrendingUp, TrendingDown, Minus,
   RefreshCw, AlertTriangle, CheckCircle, Shield,
-  Activity, BarChart2, Layers, Eye, Clock,
+  Activity, BarChart2, Layers, Eye, Clock, GitBranch,
 } from 'lucide-react';
 
 // ─── Types matching the API ───────────────────────────────────────────────────
@@ -49,6 +49,14 @@ interface AnalysisResult {
   };
   patterns: Array<{ name: string; type: 'bullish' | 'bearish' | 'neutral'; strength: number; description: string }>;
   reasons: string[];
+  marketStructure: {
+    marketTrend: TrendDir;
+    structureDirection: TrendDir;
+    latestSwing: 'HH' | 'HL' | 'LH' | 'LL' | null;
+    swingHigh: number | null;
+    swingLow: number | null;
+    marketPhase: 'trending' | 'ranging' | 'reversal';
+  };
 }
 
 // ─── Fetch hook ───────────────────────────────────────────────────────────────
@@ -411,6 +419,58 @@ export default function Analysis() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* ── Market Structure ── */}
+            <Card className="bg-card border-border">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-mono uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                  <GitBranch className="h-4 w-4 text-primary" />
+                  Market Structure — swing-based, indicator-free
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pb-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
+                    <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Market Trend</span>
+                    <TrendPill dir={data.marketStructure.marketTrend} />
+                  </div>
+                  <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
+                    <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Structure Direction</span>
+                    <TrendPill dir={data.marketStructure.structureDirection} />
+                  </div>
+                  <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
+                    <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Latest Swing</span>
+                    <span className={`font-mono text-lg font-bold ${
+                      data.marketStructure.latestSwing === 'HH' || data.marketStructure.latestSwing === 'HL' ? 'text-emerald-400' :
+                      data.marketStructure.latestSwing === 'LH' || data.marketStructure.latestSwing === 'LL' ? 'text-red-400' :
+                      'text-muted-foreground'
+                    }`}>
+                      {data.marketStructure.latestSwing ?? '—'}
+                    </span>
+                  </div>
+                  <StatCard
+                    label="Swing High"
+                    value={data.marketStructure.swingHigh !== null ? formatPrice(data.marketStructure.swingHigh) : '—'}
+                    accent="text-emerald-400"
+                  />
+                  <StatCard
+                    label="Swing Low"
+                    value={data.marketStructure.swingLow !== null ? formatPrice(data.marketStructure.swingLow) : '—'}
+                    accent="text-red-400"
+                  />
+                  <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
+                    <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Market Phase</span>
+                    <span className={`font-mono text-lg font-bold capitalize ${
+                      data.marketStructure.marketPhase === 'trending' ? 'text-emerald-400' :
+                      data.marketStructure.marketPhase === 'reversal' ? 'text-yellow-400' :
+                      'text-muted-foreground'
+                    }`}>
+                      {data.marketStructure.marketPhase}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* ── Tabs: Reasons | Indicators | Patterns ── */}
             <Tabs defaultValue="reasons">

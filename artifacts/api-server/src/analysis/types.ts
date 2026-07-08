@@ -118,6 +118,38 @@ export interface CandlestickPattern {
   description: string;
 }
 
+// ─── Market Structure (Phase 3A) ───────────────────────────────────────────────
+
+/** Classification of a swing relative to the prior swing of the same kind. */
+export type SwingLabel = "HH" | "HL" | "LH" | "LL";
+
+/** How the current trend relates to what came before it. */
+export type MarketPhase = "trending" | "ranging" | "reversal";
+
+/**
+ * Flat summary of the Market Structure Engine's output, exposed on
+ * `AnalysisResult`. Derived purely from swing highs/lows — no RSI, MACD,
+ * EMA, or other indicator feeds into these fields.
+ */
+export interface MarketStructureSummary {
+  /** Confirmed structural trend (requires the latest high AND low to agree). */
+  marketTrend: TrendDirection;
+  /**
+   * Directional bias implied by the single most recently formed swing
+   * (HH/HL → bullish, LH/LL → bearish). Can lead `marketTrend` — e.g. the
+   * first HL after a run of LH/LL flips this before the trend itself
+   * reclassifies as bullish.
+   */
+  structureDirection: TrendDirection;
+  /** Label of whichever swing (high or low) formed most recently. */
+  latestSwing: SwingLabel | null;
+  /** Price of the latest confirmed swing high. */
+  swingHigh: number | null;
+  /** Price of the latest confirmed swing low. */
+  swingLow: number | null;
+  marketPhase: MarketPhase;
+}
+
 // ─── Full Indicator Bundle ─────────────────────────────────────────────────────
 
 export interface IndicatorSet {
@@ -152,4 +184,5 @@ export interface AnalysisResult {
   indicators: IndicatorSet;
   patterns: CandlestickPattern[];
   reasons: string[];
+  marketStructure: MarketStructureSummary;
 }

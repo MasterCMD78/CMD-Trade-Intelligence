@@ -10,3 +10,4 @@
 - [DB schema push required on fresh env](db-schema-push.md) — DATABASE_URL is provided but schema is not auto-applied; run pnpm --filter @workspace/db run push before auth endpoints work
 - [Route sub-path conventions](route-subpaths.md) — /api/dashboard, /api/risk, /api/analysis have no root GET; only sub-paths like /summary exist; this is intentional and pre-existing
 - [Wilder smoothing + oscillator/trend conflict](wilder-smoothing-and-oscillator-trend-conflict.md) — ADX final step needs true-average not running-sum smoothing; mean-reversion oscillators must be dampened (not zeroed) when ADX confirms a strong trend
+- [Market structure trend/phase derivation](market-structure-trend-phase.md) — comparing trend vs. raw prior swing-label entry misses reversals hidden behind a transient sideways blip; track last directional trend instead
