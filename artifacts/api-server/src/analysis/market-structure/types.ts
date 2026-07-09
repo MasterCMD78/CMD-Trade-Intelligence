@@ -142,3 +142,19 @@ export interface BOSOptions {
    */
   minCandleClosePct?: number;
 }
+
+// ─── Liquidity Sweep (Phase 3D) ───────────────────────────────────────────────
+
+export type { LiquidityKind, LiquidityLevel, LiquiditySweep, LiquiditySweepOptions, LiquiditySweepResult } from "./liquidity-sweep.js";
+
+// ─── Order Block (Phase 3E) ───────────────────────────────────────────────────
+
+export type { OrderBlockKind, OrderBlock, OrderBlockResult } from "./order-block.js";
+
+// ─── Fair Value Gap (Phase 3F) ────────────────────────────────────────────────
+
+export type { FVGKind, FVGStatus, FairValueGap, FairValueGapResult } from "./fair-value-gap.js";
+
+// ─── Premium & Discount (Phase 3G) ───────────────────────────────────────────
+
+export type { PremiumDiscountZone, PremiumDiscountResult } from "./premium-discount.js";

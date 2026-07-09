@@ -9,20 +9,28 @@
  *   5. Score all signals → composite score.
  *   6. Derive decision, confidence, risk level, trend.
  *   7. Compute entry / SL / TP / R:R.
- *   8. Generate human-readable reasons.
- *   9. Return AnalysisResult.
- *
- * To add a new indicator:
- *   1. Create it in src/analysis/indicators/<name>.ts.
- *   2. Import and call it in computeIndicators() below.
- *   3. Add its result to IndicatorSet (types.ts).
- *   4. Add a scorer in scoring.ts.
+ *   8. Run full market structure analysis (BOS, Liquidity, OBs, FVGs, P&D).
+ *   9. Adjust confidence using Smart Money signals.
+ *  10. Generate human-readable reasons.
+ *  11. Return AnalysisResult.
  */
 
 import type { MarketCandle } from "../market-data/types.js";
 import { Timeframe }         from "../market-data/types.js";
-import type { AnalysisResult, BosSummary, IndicatorSet, CandlestickPattern, MarketStructureSummary, TrendDirection } from "./types.js";
-import { analyzeMarketStructure } from "./market-structure/engine.js";
+import type {
+  AnalysisResult,
+  BosSummary,
+  IndicatorSet,
+  CandlestickPattern,
+  MarketStructureSummary,
+  TrendDirection,
+  LiquiditySummary,
+  OrderBlockSummary,
+  FairValueGapSummary,
+  PremiumDiscountSummary,
+} from "./types.js";
+import { analyzeMarketStructureFull } from "./market-structure/engine.js";
+import type { FullMarketStructureResult } from "./market-structure/engine.js";
 import type { MarketStructureResult } from "./market-structure/types.js";
 import { computeRsi }              from "./indicators/rsi.js";
 import { computeEma }              from "./indicators/ema.js";
@@ -151,9 +159,8 @@ function generateReasons(
   return reasons;
 }
 
-// ─── Market Structure summary ────────────────────────────────────────────────
+// ─── Market Structure summary builders ───────────────────────────────────────
 
-/** HH/HL → bullish bias, LH/LL → bearish bias, no swing yet → sideways. */
 function structureDirectionFromSwing(latestSwingType: MarketStructureResult["latestSwingType"]): TrendDirection {
   if (latestSwingType === "HH" || latestSwingType === "HL") return "bullish";
   if (latestSwingType === "LH" || latestSwingType === "LL") return "bearish";
@@ -161,7 +168,6 @@ function structureDirectionFromSwing(latestSwingType: MarketStructureResult["lat
 }
 
 function buildBosSummary(structure: MarketStructureResult): BosSummary {
-  // Pick the more recent of the two BOS events as the "active" one.
   const { lastBullishBOS: bull, lastBearishBOS: bear } = structure;
   let active = null;
   if (bull && bear) {
@@ -169,11 +175,9 @@ function buildBosSummary(structure: MarketStructureResult): BosSummary {
   } else {
     active = bull ?? bear ?? null;
   }
-
   if (active === null) {
     return { detected: false, direction: null, price: null, strength: null, confidence: null };
   }
-
   return {
     detected:   true,
     direction:  active.direction,
@@ -183,7 +187,69 @@ function buildBosSummary(structure: MarketStructureResult): BosSummary {
   };
 }
 
-function buildMarketStructureSummary(structure: MarketStructureResult): MarketStructureSummary {
+function buildLiquiditySummary(structure: FullMarketStructureResult): LiquiditySummary {
+  const { liquidity } = structure;
+  const last = liquidity.lastSweep;
+  return {
+    levelCount:           liquidity.liquidityLevels.length,
+    sweepCount:           liquidity.sweeps.length,
+    lastSweepDirection:   last?.direction ?? null,
+    lastSweepRejection:   last?.rejectionStrength ?? null,
+    lastSweepConfidence:  last?.confidence ?? null,
+    lastSweepPrice:       last?.sweepPrice ?? null,
+  };
+}
+
+function buildOrderBlockSummary(structure: FullMarketStructureResult): OrderBlockSummary {
+  const { orderBlocks } = structure;
+  const bull = orderBlocks.lastBullishOB;
+  const bear = orderBlocks.lastBearishOB;
+  return {
+    activeCount:            orderBlocks.activeOrderBlocks.length,
+    lastBullishHigh:        bull?.high ?? null,
+    lastBullishLow:         bull?.low ?? null,
+    lastBullishConfidence:  bull?.confidence ?? null,
+    lastBullishMitigated:   bull?.mitigated ?? false,
+    lastBearishHigh:        bear?.high ?? null,
+    lastBearishLow:         bear?.low ?? null,
+    lastBearishConfidence:  bear?.confidence ?? null,
+    lastBearishMitigated:   bear?.mitigated ?? false,
+  };
+}
+
+function buildFairValueGapSummary(structure: FullMarketStructureResult): FairValueGapSummary {
+  const { fairValueGaps } = structure;
+  const bull = fairValueGaps.lastBullishFvg;
+  const bear = fairValueGaps.lastBearishFvg;
+  return {
+    activeCount:          fairValueGaps.activeFvgs.length,
+    lastBullishGapHigh:   bull?.gapHigh ?? null,
+    lastBullishGapLow:    bull?.gapLow ?? null,
+    lastBullishStatus:    bull?.status ?? null,
+    lastBullishFillPct:   bull?.fillPct ?? null,
+    lastBearishGapHigh:   bear?.gapHigh ?? null,
+    lastBearishGapLow:    bear?.gapLow ?? null,
+    lastBearishStatus:    bear?.status ?? null,
+    lastBearishFillPct:   bear?.fillPct ?? null,
+  };
+}
+
+function buildPremiumDiscountSummary(structure: FullMarketStructureResult): PremiumDiscountSummary {
+  const pd = structure.premiumDiscount;
+  if (!pd) {
+    return { available: false, currentZone: null, pricePosition: null, equilibrium: null, rangeHigh: null, rangeLow: null };
+  }
+  return {
+    available:     true,
+    currentZone:   pd.currentZone,
+    pricePosition: pd.pricePosition,
+    equilibrium:   pd.equilibrium,
+    rangeHigh:     pd.rangeHigh,
+    rangeLow:      pd.rangeLow,
+  };
+}
+
+function buildMarketStructureSummary(structure: FullMarketStructureResult): MarketStructureSummary {
   return {
     marketTrend:        structure.currentTrend,
     structureDirection: structureDirectionFromSwing(structure.latestSwingType),
@@ -192,8 +258,14 @@ function buildMarketStructureSummary(structure: MarketStructureResult): MarketSt
     swingLow:           structure.latestSwingLow?.price ?? null,
     marketPhase:        structure.marketPhase,
     bos:                buildBosSummary(structure),
+    liquidity:          buildLiquiditySummary(structure),
+    orderBlocks:        buildOrderBlockSummary(structure),
+    fairValueGaps:      buildFairValueGapSummary(structure),
+    premiumDiscount:    buildPremiumDiscountSummary(structure),
   };
 }
+
+// ─── Reason generators for Smart Money modules ───────────────────────────────
 
 function generateStructureReason(structure: MarketStructureSummary): string {
   const { marketTrend, latestSwing, marketPhase } = structure;
@@ -215,26 +287,113 @@ function generateBOSReason(bos: BosSummary): string | null {
   return `${dir} BOS confirmed — price closed ${side}${price}${strengthPct}${confPct}.`;
 }
 
+function generateLiquidityReason(liq: LiquiditySummary): string | null {
+  if (liq.sweepCount === 0) return null;
+  const dir = liq.lastSweepDirection === "buy-side" ? "Buy-side" : "Sell-side";
+  const rej = liq.lastSweepRejection !== null ? ` (rejection ${(liq.lastSweepRejection * 100).toFixed(0)}%` : "";
+  const conf = liq.lastSweepConfidence !== null ? `, confidence ${liq.lastSweepConfidence})` : rej ? ")" : "";
+  return `${dir} liquidity sweep confirmed — wick pierced level and closed back inside${rej}${conf}. ${liq.levelCount} liquidity pools tracked.`;
+}
+
+function generateOrderBlockReason(ob: OrderBlockSummary): string | null {
+  if (ob.activeCount === 0) return null;
+  const parts: string[] = [];
+  if (ob.lastBullishHigh !== null && ob.lastBullishLow !== null) {
+    const tag = ob.lastBullishMitigated ? " [mitigated]" : " [active]";
+    parts.push(`Bullish OB: ${ob.lastBullishLow.toFixed(5)}–${ob.lastBullishHigh.toFixed(5)}${tag}`);
+  }
+  if (ob.lastBearishHigh !== null && ob.lastBearishLow !== null) {
+    const tag = ob.lastBearishMitigated ? " [mitigated]" : " [active]";
+    parts.push(`Bearish OB: ${ob.lastBearishLow.toFixed(5)}–${ob.lastBearishHigh.toFixed(5)}${tag}`);
+  }
+  if (parts.length === 0) return null;
+  return `Order Blocks — ${parts.join("; ")}. ${ob.activeCount} active zone(s).`;
+}
+
+function generateFvgReason(fvg: FairValueGapSummary): string | null {
+  if (fvg.activeCount === 0) return null;
+  const parts: string[] = [];
+  if (fvg.lastBullishGapHigh !== null && fvg.lastBullishStatus !== null) {
+    parts.push(`Bullish FVG ${fvg.lastBullishGapLow?.toFixed(5)}–${fvg.lastBullishGapHigh.toFixed(5)} [${fvg.lastBullishStatus}, ${fvg.lastBullishFillPct ?? 0}% filled]`);
+  }
+  if (fvg.lastBearishGapHigh !== null && fvg.lastBearishStatus !== null) {
+    parts.push(`Bearish FVG ${fvg.lastBearishGapLow?.toFixed(5)}–${fvg.lastBearishGapHigh.toFixed(5)} [${fvg.lastBearishStatus}, ${fvg.lastBearishFillPct ?? 0}% filled]`);
+  }
+  if (parts.length === 0) return null;
+  return `Fair Value Gaps — ${parts.join("; ")}. ${fvg.activeCount} unfilled.`;
+}
+
+function generatePremiumDiscountReason(pd: PremiumDiscountSummary): string | null {
+  if (!pd.available || pd.currentZone === null) return null;
+  const zoneLabel =
+    pd.currentZone === "premium" ? "Premium (expensive)" :
+    pd.currentZone === "discount" ? "Discount (cheap)" : "Equilibrium (fair value)";
+  const pos = pd.pricePosition !== null ? ` at ${pd.pricePosition}% of the swing range` : "";
+  const equil = pd.equilibrium !== null ? ` (equilibrium: ${pd.equilibrium.toFixed(5)})` : "";
+  return `Price in ${zoneLabel}${pos}${equil} — ${pd.currentZone === "premium" ? "favour sell setups" : pd.currentZone === "discount" ? "favour buy setups" : "no premium/discount bias"}.`;
+}
+
+// ─── Confidence adjustment from Smart Money signals ───────────────────────────
+
 /**
- * Nudge confidence up/down based on whether the latest BOS aligns with
- * the final decision. Adjustment is proportional to BOS strength so weak
- * breaks barely move the needle.
+ * Nudge confidence based on whether Smart Money signals align with decision.
  *
- * Aligning BOS   → +strength × 8 points (max +8)
- * Opposing BOS   → −strength × 5 points (max −5)
+ * BOS alignment:          ±8 pts (strength-weighted)
+ * Liquidity sweep:        ±6 pts (rejection-weighted)
+ * Order block alignment:  ±5 pts (flat)
+ * Premium/Discount:       ±5 pts (flat, direction-weighted)
  */
-function applyBOSConfidenceAdjustment(
+function applySmartMoneyConfidenceAdjustment(
   baseConfidence: number,
   decision: AnalysisResult["decision"],
-  bos: BosSummary,
+  ms: MarketStructureSummary,
 ): number {
-  if (!bos.detected || bos.direction === null || bos.strength === null) {
-    return baseConfidence;
+  let delta = 0;
+
+  // ── BOS adjustment ────────────────────────────────────────────────────────
+  const { bos } = ms;
+  if (bos.detected && bos.direction !== null && bos.strength !== null) {
+    const bosAligns =
+      (decision === "BUY"  && bos.direction === "bullish") ||
+      (decision === "SELL" && bos.direction === "bearish");
+    delta += bosAligns ? bos.strength * 8 : -(bos.strength * 5);
   }
-  const aligns =
-    (decision === "BUY" && bos.direction === "bullish") ||
-    (decision === "SELL" && bos.direction === "bearish");
-  const delta = aligns ? bos.strength * 8 : -(bos.strength * 5);
+
+  // ── Liquidity sweep adjustment ────────────────────────────────────────────
+  const { liquidity } = ms;
+  if (liquidity.sweepCount > 0 && liquidity.lastSweepDirection !== null && liquidity.lastSweepRejection !== null) {
+    // A buy-side sweep (wick above, closes below) signals bearish rejection → SELL
+    // A sell-side sweep (wick below, closes above) signals bullish rejection → BUY
+    const sweepAligns =
+      (decision === "SELL" && liquidity.lastSweepDirection === "buy-side") ||
+      (decision === "BUY"  && liquidity.lastSweepDirection === "sell-side");
+    delta += sweepAligns ? liquidity.lastSweepRejection * 6 : -(liquidity.lastSweepRejection * 3);
+  }
+
+  // ── Order Block adjustment ────────────────────────────────────────────────
+  const { orderBlocks } = ms;
+  if (orderBlocks.activeCount > 0) {
+    const bullishOBActive = orderBlocks.lastBullishHigh !== null && !orderBlocks.lastBullishMitigated;
+    const bearishOBActive = orderBlocks.lastBearishHigh !== null && !orderBlocks.lastBearishMitigated;
+    if (decision === "BUY"  && bullishOBActive) delta += 5;
+    if (decision === "SELL" && bearishOBActive) delta += 5;
+    if (decision === "BUY"  && bearishOBActive) delta -= 3;
+    if (decision === "SELL" && bullishOBActive) delta -= 3;
+  }
+
+  // ── Premium/Discount adjustment ───────────────────────────────────────────
+  const { premiumDiscount } = ms;
+  if (premiumDiscount.available && premiumDiscount.currentZone !== null) {
+    const pdAligns =
+      (decision === "BUY"  && premiumDiscount.currentZone === "discount") ||
+      (decision === "SELL" && premiumDiscount.currentZone === "premium");
+    const pdContra =
+      (decision === "BUY"  && premiumDiscount.currentZone === "premium") ||
+      (decision === "SELL" && premiumDiscount.currentZone === "discount");
+    if (pdAligns) delta += 5;
+    if (pdContra) delta -= 5;
+  }
+
   return Math.min(100, Math.max(0, Math.round(baseConfidence + delta)));
 }
 
@@ -264,14 +423,27 @@ export function runAnalysis(input: EngineInput): AnalysisResult {
   const riskLevel  = computeRiskLevel(indicators);
   const trend      = deriveTrend(indicators);
   const risk       = computeRisk(decision, currentBid, currentAsk, indicators);
-  const structure       = analyzeMarketStructure(candles, { swingLength: 2 });
-  const marketStructure = buildMarketStructureSummary(structure);
-  const adjustedConfidence = applyBOSConfidenceAdjustment(confidence, decision, marketStructure.bos);
-  const bosReason = generateBOSReason(marketStructure.bos);
-  const reasons   = [
+
+  // Full Smart Money analysis (Phase 3A–3G)
+  const fullStructure   = analyzeMarketStructureFull(candles, currentPrice, { swingLength: 2 });
+  const marketStructure = buildMarketStructureSummary(fullStructure);
+
+  const adjustedConfidence = applySmartMoneyConfidenceAdjustment(confidence, decision, marketStructure);
+
+  const bosReason  = generateBOSReason(marketStructure.bos);
+  const liqReason  = generateLiquidityReason(marketStructure.liquidity);
+  const obReason   = generateOrderBlockReason(marketStructure.orderBlocks);
+  const fvgReason  = generateFvgReason(marketStructure.fairValueGaps);
+  const pdReason   = generatePremiumDiscountReason(marketStructure.premiumDiscount);
+
+  const reasons = [
     ...generateReasons(indicators, patterns, score),
     generateStructureReason(marketStructure),
-    ...(bosReason !== null ? [bosReason] : []),
+    ...(bosReason  !== null ? [bosReason]  : []),
+    ...(liqReason  !== null ? [liqReason]  : []),
+    ...(obReason   !== null ? [obReason]   : []),
+    ...(fvgReason  !== null ? [fvgReason]  : []),
+    ...(pdReason   !== null ? [pdReason]   : []),
   ];
 
   return {

@@ -142,6 +142,82 @@ export interface BosSummary {
   confidence: number | null;
 }
 
+// ─── Liquidity (Phase 3D) ─────────────────────────────────────────────────────
+
+export interface LiquiditySummary {
+  /** Total number of liquidity levels detected. */
+  levelCount: number;
+  /** Number of confirmed sweep events. */
+  sweepCount: number;
+  /** Most recent sweep direction; null if no sweeps detected. */
+  lastSweepDirection: "buy-side" | "sell-side" | null;
+  /** Rejection strength of most recent sweep (0–1); null if none. */
+  lastSweepRejection: number | null;
+  /** Confidence of most recent sweep (0–100); null if none. */
+  lastSweepConfidence: number | null;
+  /** Price of the last sweep wick extreme; null if none. */
+  lastSweepPrice: number | null;
+}
+
+// ─── Order Blocks (Phase 3E) ──────────────────────────────────────────────────
+
+export interface OrderBlockSummary {
+  /** Number of active (non-invalidated) order blocks. */
+  activeCount: number;
+  /** Most recent bullish OB high; null if none. */
+  lastBullishHigh: number | null;
+  /** Most recent bullish OB low; null if none. */
+  lastBullishLow: number | null;
+  /** Most recent bullish OB confidence; null if none. */
+  lastBullishConfidence: number | null;
+  /** Whether the most recent bullish OB has been mitigated. */
+  lastBullishMitigated: boolean;
+  /** Most recent bearish OB high; null if none. */
+  lastBearishHigh: number | null;
+  /** Most recent bearish OB low; null if none. */
+  lastBearishLow: number | null;
+  /** Most recent bearish OB confidence; null if none. */
+  lastBearishConfidence: number | null;
+  /** Whether the most recent bearish OB has been mitigated. */
+  lastBearishMitigated: boolean;
+}
+
+// ─── Fair Value Gaps (Phase 3F) ───────────────────────────────────────────────
+
+export interface FairValueGapSummary {
+  /** Total active (non-mitigated) FVGs. */
+  activeCount: number;
+  /** Most recent bullish FVG gap high; null if none. */
+  lastBullishGapHigh: number | null;
+  /** Most recent bullish FVG gap low; null if none. */
+  lastBullishGapLow: number | null;
+  /** Most recent bullish FVG status. */
+  lastBullishStatus: "active" | "partial" | "mitigated" | null;
+  /** Most recent bullish FVG fill percentage (0–100). */
+  lastBullishFillPct: number | null;
+  /** Most recent bearish FVG gap high; null if none. */
+  lastBearishGapHigh: number | null;
+  /** Most recent bearish FVG gap low; null if none. */
+  lastBearishGapLow: number | null;
+  /** Most recent bearish FVG status. */
+  lastBearishStatus: "active" | "partial" | "mitigated" | null;
+  /** Most recent bearish FVG fill percentage (0–100). */
+  lastBearishFillPct: number | null;
+}
+
+// ─── Premium & Discount (Phase 3G) ───────────────────────────────────────────
+
+export interface PremiumDiscountSummary {
+  /** Whether enough swing data exists to compute the zone. */
+  available: boolean;
+  currentZone: "premium" | "equilibrium" | "discount" | null;
+  /** 0–100 position within the swing high/low range. */
+  pricePosition: number | null;
+  equilibrium: number | null;
+  rangeHigh: number | null;
+  rangeLow: number | null;
+}
+
 /**
  * Flat summary of the Market Structure Engine's output, exposed on
  * `AnalysisResult`. Derived purely from swing highs/lows — no RSI, MACD,
@@ -152,9 +228,7 @@ export interface MarketStructureSummary {
   marketTrend: TrendDirection;
   /**
    * Directional bias implied by the single most recently formed swing
-   * (HH/HL → bullish, LH/LL → bearish). Can lead `marketTrend` — e.g. the
-   * first HL after a run of LH/LL flips this before the trend itself
-   * reclassifies as bullish.
+   * (HH/HL → bullish, LH/LL → bearish). Can lead `marketTrend`.
    */
   structureDirection: TrendDirection;
   /** Label of whichever swing (high or low) formed most recently. */
@@ -166,6 +240,14 @@ export interface MarketStructureSummary {
   marketPhase: MarketPhase;
   /** Break of Structure summary (Phase 3B). */
   bos: BosSummary;
+  /** Liquidity sweep summary (Phase 3D). */
+  liquidity: LiquiditySummary;
+  /** Order block summary (Phase 3E). */
+  orderBlocks: OrderBlockSummary;
+  /** Fair value gap summary (Phase 3F). */
+  fairValueGaps: FairValueGapSummary;
+  /** Premium & discount zone summary (Phase 3G). */
+  premiumDiscount: PremiumDiscountSummary;
 }
 
 // ─── Full Indicator Bundle ─────────────────────────────────────────────────────

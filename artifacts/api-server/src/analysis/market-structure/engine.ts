@@ -4,10 +4,11 @@
  * Sequence: detect swings → classify HH/HL/LH/LL → derive trend purely from
  * that classification → package everything into a reusable Structure State.
  *
- * To add a new structure concept later (BOS, CHOCH, liquidity sweeps, order
- * blocks, FVGs, premium/discount zones — Phase 3B+), build it as its own
- * detector consuming `swingHighs`/`swingLows` from this module's output,
- * the same way `classifier.ts` and `trend-engine.ts` do.
+ * Phase 3B: Break of Structure detection.
+ * Phase 3D: Liquidity Sweep detection.
+ * Phase 3E: Order Block detection.
+ * Phase 3F: Fair Value Gap detection.
+ * Phase 3G: Premium & Discount zone computation.
  */
 
 import type { BOSDirection, MarketPhase, MarketStructureOptions, MarketStructureResult, StructureCandle } from "./types.js";
@@ -16,6 +17,14 @@ import { detectSwings } from "./swing-detector.js";
 import { classifySwings } from "./classifier.js";
 import { computeTrend } from "./trend-engine.js";
 import { detectBOS } from "./bos-detector.js";
+import { detectLiquiditySweeps } from "./liquidity-sweep.js";
+import { detectOrderBlocks } from "./order-block.js";
+import { detectFairValueGaps } from "./fair-value-gap.js";
+import { computePremiumDiscount } from "./premium-discount.js";
+import type { LiquiditySweepResult } from "./liquidity-sweep.js";
+import type { OrderBlockResult } from "./order-block.js";
+import type { FairValueGapResult } from "./fair-value-gap.js";
+import type { PremiumDiscountResult } from "./premium-discount.js";
 
 const DEFAULT_SWING_LENGTH = 2;
 
@@ -23,12 +32,18 @@ function computeMarketPhase(currentTrend: TrendDirection, previousTrend: TrendDi
   if (currentTrend === "sideways") return "ranging";
   if (currentTrend === previousTrend) return "trending";
   if (previousTrend === "sideways") {
-    // First time a directional trend confirms out of a range — that's the
-    // trend establishing itself, not flipping from one direction to another.
     return "trending";
   }
-  // previousTrend was the opposite directional bias — a genuine flip.
   return "reversal";
+}
+
+// ─── Extended result including Phase 3D-3G ────────────────────────────────────
+
+export interface FullMarketStructureResult extends MarketStructureResult {
+  liquidity: LiquiditySweepResult;
+  orderBlocks: OrderBlockResult;
+  fairValueGaps: FairValueGapResult;
+  premiumDiscount: PremiumDiscountResult | null;
 }
 
 export function analyzeMarketStructure(
@@ -55,11 +70,9 @@ export function analyzeMarketStructure(
 
   const marketPhase = computeMarketPhase(currentTrend, previousTrend);
 
-  // ── Break of Structure ───────────────────────────────────────────────────
   const { bullishBOS, bearishBOS, lastBullishBOS, lastBearishBOS } =
     detectBOS(candles, classifiedHighs, classifiedLows, options.bos ?? {});
 
-  // The most recent BOS (by breakIndex) determines currentStructureBias.
   let currentStructureBias: BOSDirection | null = null;
   if (lastBullishBOS !== null && lastBearishBOS !== null) {
     currentStructureBias =
@@ -87,8 +100,51 @@ export function analyzeMarketStructure(
   };
 }
 
+/**
+ * Full analysis including all Phase 3D-3G Smart Money modules.
+ */
+export function analyzeMarketStructureFull(
+  candles: StructureCandle[],
+  currentPrice: number,
+  options: MarketStructureOptions = {},
+): FullMarketStructureResult {
+  const base = analyzeMarketStructure(candles, options);
+
+  const liquidity = detectLiquiditySweeps(
+    candles,
+    base.swingHighs,
+    base.swingLows,
+  );
+
+  const orderBlocks = detectOrderBlocks(
+    candles,
+    base.allBullishBOS,
+    base.allBearishBOS,
+  );
+
+  const fairValueGaps = detectFairValueGaps(candles);
+
+  const premiumDiscount = computePremiumDiscount(
+    currentPrice,
+    base.swingHighs,
+    base.swingLows,
+  );
+
+  return {
+    ...base,
+    liquidity,
+    orderBlocks,
+    fairValueGaps,
+    premiumDiscount,
+  };
+}
+
 export * from "./types.js";
 export { detectSwings } from "./swing-detector.js";
 export { classifySwings } from "./classifier.js";
 export { computeTrend } from "./trend-engine.js";
 export { detectBOS } from "./bos-detector.js";
+export { detectLiquiditySweeps } from "./liquidity-sweep.js";
+export { detectOrderBlocks } from "./order-block.js";
+export { detectFairValueGaps } from "./fair-value-gap.js";
+export { computePremiumDiscount } from "./premium-discount.js";

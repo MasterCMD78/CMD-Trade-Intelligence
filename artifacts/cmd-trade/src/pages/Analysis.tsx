@@ -12,6 +12,7 @@ import {
   BrainCircuit, TrendingUp, TrendingDown, Minus,
   RefreshCw, AlertTriangle, CheckCircle, Shield,
   Activity, BarChart2, Layers, Eye, Clock, GitBranch, Zap,
+  Droplets, Box, Divide, DollarSign,
 } from 'lucide-react';
 
 // ─── Types matching the API ───────────────────────────────────────────────────
@@ -20,6 +21,51 @@ type Decision = 'BUY' | 'SELL' | 'HOLD';
 type RiskLevel = 'low' | 'medium' | 'high';
 type TrendDir = 'bullish' | 'bearish' | 'sideways';
 type Signal = 'buy' | 'sell' | 'neutral';
+type SweepDir = 'buy-side' | 'sell-side';
+type PdZone = 'premium' | 'equilibrium' | 'discount';
+type FvgStatus = 'active' | 'partial' | 'mitigated';
+
+interface LiquiditySummary {
+  levelCount: number;
+  sweepCount: number;
+  lastSweepDirection: SweepDir | null;
+  lastSweepRejection: number | null;
+  lastSweepConfidence: number | null;
+  lastSweepPrice: number | null;
+}
+
+interface OrderBlockSummary {
+  activeCount: number;
+  lastBullishHigh: number | null;
+  lastBullishLow: number | null;
+  lastBullishConfidence: number | null;
+  lastBullishMitigated: boolean;
+  lastBearishHigh: number | null;
+  lastBearishLow: number | null;
+  lastBearishConfidence: number | null;
+  lastBearishMitigated: boolean;
+}
+
+interface FairValueGapSummary {
+  activeCount: number;
+  lastBullishGapHigh: number | null;
+  lastBullishGapLow: number | null;
+  lastBullishStatus: FvgStatus | null;
+  lastBullishFillPct: number | null;
+  lastBearishGapHigh: number | null;
+  lastBearishGapLow: number | null;
+  lastBearishStatus: FvgStatus | null;
+  lastBearishFillPct: number | null;
+}
+
+interface PremiumDiscountSummary {
+  available: boolean;
+  currentZone: PdZone | null;
+  pricePosition: number | null;
+  equilibrium: number | null;
+  rangeHigh: number | null;
+  rangeLow: number | null;
+}
 
 interface AnalysisResult {
   symbol: string;
@@ -63,6 +109,10 @@ interface AnalysisResult {
       strength: number | null;
       confidence: number | null;
     };
+    liquidity: LiquiditySummary;
+    orderBlocks: OrderBlockSummary;
+    fairValueGaps: FairValueGapSummary;
+    premiumDiscount: PremiumDiscountSummary;
   };
 }
 
@@ -198,6 +248,27 @@ function TrendPill({ dir }: { dir: TrendDir }) {
   );
 }
 
+// ─── Strength bar ─────────────────────────────────────────────────────────────
+
+function StrengthBar({ value, color }: { value: number; color: string }) {
+  return (
+    <div className="mt-1 h-1 bg-muted rounded-full overflow-hidden">
+      <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.round(value * 100)}%` }} />
+    </div>
+  );
+}
+
+// ─── Empty zone pill ──────────────────────────────────────────────────────────
+
+function NoneDetected({ message }: { message: string }) {
+  return (
+    <div className="flex items-center gap-3 py-3 px-4 bg-muted/20 rounded-lg border border-border/50">
+      <Minus className="h-4 w-4 text-muted-foreground shrink-0" />
+      <span className="font-mono text-sm text-muted-foreground">{message}</span>
+    </div>
+  );
+}
+
 // ─── Loading skeleton ─────────────────────────────────────────────────────────
 
 function AnalysisSkeleton() {
@@ -223,8 +294,6 @@ export default function Analysis() {
   const { data: symbolList = [] } = useGetMarkets({});
   const { data: tfData }          = useGetTimeframes();
 
-  // Subscribe to WS tick for the selected symbol — used to show live price
-  // and trigger a background re-analysis when a tick arrives.
   const { ticks } = useMarketWebSocket([symbol], true);
   const tick = ticks[symbol];
 
@@ -232,13 +301,12 @@ export default function Analysis() {
     symbol, timeframe, autoRefresh,
   );
 
-  // "Updated N seconds ago" counter.
   useEffect(() => {
     if (!dataUpdatedAt) return;
-    const tick = setInterval(() => {
+    const interval = setInterval(() => {
       setSecsAgo(Math.floor((Date.now() - dataUpdatedAt) / 1000));
     }, 1000);
-    return () => clearInterval(tick);
+    return () => clearInterval(interval);
   }, [dataUpdatedAt]);
 
   const handleRefresh = useCallback(() => { void refetch(); }, [refetch]);
@@ -251,7 +319,6 @@ export default function Analysis() {
       <Card className="bg-card border-border shadow-sm">
         <CardContent className="pt-5 pb-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 flex-wrap">
-            {/* Symbol selector */}
             <div className="flex flex-col gap-1">
               <label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Symbol</label>
               <select
@@ -261,14 +328,13 @@ export default function Analysis() {
               >
                 {symbolList.length === 0
                   ? <option value={symbol}>{symbol}</option>
-                  : symbolList.map((s) => (
+                  : symbolList.map((s: { symbol: string; displayName: string; assetClass: string }) => (
                       <option key={s.symbol} value={s.symbol}>{s.displayName} ({s.assetClass})</option>
                     ))
                 }
               </select>
             </div>
 
-            {/* Timeframe buttons */}
             <div className="flex flex-col gap-1">
               <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Timeframe</span>
               <div className="flex gap-1 flex-wrap">
@@ -288,9 +354,7 @@ export default function Analysis() {
               </div>
             </div>
 
-            {/* Actions */}
             <div className="flex items-center gap-3 sm:ml-auto">
-              {/* Auto-refresh toggle */}
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs text-muted-foreground">Auto</span>
                 <button
@@ -318,7 +382,6 @@ export default function Analysis() {
             </div>
           </div>
 
-          {/* Status bar */}
           <div className="flex items-center gap-3 mt-3 pt-3 border-t border-border/50">
             {tick && (
               <span className="font-mono text-xs text-muted-foreground">
@@ -343,22 +406,17 @@ export default function Analysis() {
         </CardContent>
       </Card>
 
-      {/* ── Error state ── */}
       {error && !isLoading && (
         <Card className="bg-destructive/10 border-destructive/30">
           <CardContent className="py-4 flex items-center gap-3">
             <AlertTriangle className="h-5 w-5 text-destructive shrink-0" />
-            <p className="font-mono text-sm text-destructive">
-              {(error as Error).message}
-            </p>
+            <p className="font-mono text-sm text-destructive">{(error as Error).message}</p>
           </CardContent>
         </Card>
       )}
 
-      {/* ── Loading ── */}
       {isLoading && !data && <AnalysisSkeleton />}
 
-      {/* ── Results ── */}
       <AnimatePresence mode="wait">
         {data && (
           <motion.div
@@ -370,7 +428,6 @@ export default function Analysis() {
           >
             {/* ── Decision hero row ── */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Decision + confidence */}
               <Card className={`md:col-span-1 border ${DECISION_CONFIG[data.decision].bg}`}>
                 <CardContent className="pt-5 pb-4 flex flex-col items-center gap-3">
                   {(() => {
@@ -389,7 +446,6 @@ export default function Analysis() {
                 </CardContent>
               </Card>
 
-              {/* Key metrics */}
               <Card className="md:col-span-2 bg-card border-border">
                 <CardContent className="pt-5 pb-4">
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -405,9 +461,7 @@ export default function Analysis() {
                       <span className={`font-mono text-lg font-bold ${RISK_CONFIG[data.riskLevel].color}`}>
                         {RISK_CONFIG[data.riskLevel].label}
                       </span>
-                      <span className="font-mono text-xs text-muted-foreground">
-                        ATR: {pct(data.indicators.atr.pctOfPrice)}
-                      </span>
+                      <span className="font-mono text-xs text-muted-foreground">ATR: {pct(data.indicators.atr.pctOfPrice)}</span>
                     </div>
                     <StatCard label="Entry Price" value={formatPrice(data.entryPrice)} />
                     <StatCard label="Stop Loss"   value={formatPrice(data.stopLoss)}   accent="text-red-400" />
@@ -442,7 +496,7 @@ export default function Analysis() {
                     <TrendPill dir={data.marketStructure.marketTrend} />
                   </div>
                   <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
-                    <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Structure Direction</span>
+                    <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Structure Dir.</span>
                     <TrendPill dir={data.marketStructure.structureDirection} />
                   </div>
                   <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
@@ -455,16 +509,8 @@ export default function Analysis() {
                       {data.marketStructure.latestSwing ?? '—'}
                     </span>
                   </div>
-                  <StatCard
-                    label="Swing High"
-                    value={data.marketStructure.swingHigh !== null ? formatPrice(data.marketStructure.swingHigh) : '—'}
-                    accent="text-emerald-400"
-                  />
-                  <StatCard
-                    label="Swing Low"
-                    value={data.marketStructure.swingLow !== null ? formatPrice(data.marketStructure.swingLow) : '—'}
-                    accent="text-red-400"
-                  />
+                  <StatCard label="Swing High" value={data.marketStructure.swingHigh !== null ? formatPrice(data.marketStructure.swingHigh) : '—'} accent="text-emerald-400" />
+                  <StatCard label="Swing Low"  value={data.marketStructure.swingLow  !== null ? formatPrice(data.marketStructure.swingLow)  : '—'} accent="text-red-400" />
                   <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
                     <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Market Phase</span>
                     <span className={`font-mono text-lg font-bold capitalize ${
@@ -490,65 +536,321 @@ export default function Analysis() {
               <CardContent className="pb-4">
                 {data.marketStructure.bos.detected ? (
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                    {/* BOS Status */}
                     <div className={`flex flex-col gap-0.5 p-4 rounded-lg border ${
-                      data.marketStructure.bos.direction === 'bullish'
-                        ? 'bg-emerald-400/5 border-emerald-400/30'
-                        : 'bg-red-400/5 border-red-400/30'
+                      data.marketStructure.bos.direction === 'bullish' ? 'bg-emerald-400/5 border-emerald-400/30' : 'bg-red-400/5 border-red-400/30'
                     }`}>
                       <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">BOS Status</span>
-                      <span className={`font-mono text-lg font-bold ${
-                        data.marketStructure.bos.direction === 'bullish' ? 'text-emerald-400' : 'text-red-400'
-                      }`}>Confirmed</span>
+                      <span className={`font-mono text-lg font-bold ${data.marketStructure.bos.direction === 'bullish' ? 'text-emerald-400' : 'text-red-400'}`}>Confirmed</span>
                     </div>
-                    {/* Direction */}
                     <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
                       <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Direction</span>
                       <TrendPill dir={data.marketStructure.bos.direction ?? 'sideways'} />
                     </div>
-                    {/* Break Price */}
-                    <StatCard
-                      label="Break Price"
-                      value={data.marketStructure.bos.price !== null ? formatPrice(data.marketStructure.bos.price) : '—'}
-                      accent={data.marketStructure.bos.direction === 'bullish' ? 'text-emerald-400' : 'text-red-400'}
-                    />
-                    {/* Strength */}
+                    <StatCard label="Break Price" value={data.marketStructure.bos.price !== null ? formatPrice(data.marketStructure.bos.price) : '—'} accent={data.marketStructure.bos.direction === 'bullish' ? 'text-emerald-400' : 'text-red-400'} />
                     <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
                       <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Strength</span>
                       <span className="font-mono text-lg font-bold">
-                        {data.marketStructure.bos.strength !== null
-                          ? `${(data.marketStructure.bos.strength * 100).toFixed(0)}%`
-                          : '—'}
+                        {data.marketStructure.bos.strength !== null ? `${(data.marketStructure.bos.strength * 100).toFixed(0)}%` : '—'}
                       </span>
                       {data.marketStructure.bos.strength !== null && (
-                        <div className="mt-1 h-1 bg-muted rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${
-                              data.marketStructure.bos.direction === 'bullish' ? 'bg-emerald-400' : 'bg-red-400'
-                            }`}
-                            style={{ width: `${(data.marketStructure.bos.strength ?? 0) * 100}%` }}
-                          />
-                        </div>
+                        <StrengthBar value={data.marketStructure.bos.strength} color={data.marketStructure.bos.direction === 'bullish' ? 'bg-emerald-400' : 'bg-red-400'} />
                       )}
                     </div>
-                    {/* Confidence */}
                     <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
                       <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Confidence</span>
                       <span className="font-mono text-lg font-bold">
-                        {data.marketStructure.bos.confidence !== null
-                          ? `${data.marketStructure.bos.confidence}%`
-                          : '—'}
+                        {data.marketStructure.bos.confidence !== null ? `${data.marketStructure.bos.confidence}%` : '—'}
                       </span>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-3 py-3 px-4 bg-muted/20 rounded-lg border border-border/50">
-                    <Minus className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <span className="font-mono text-sm text-muted-foreground">
-                      No Break of Structure detected — price has not closed beyond any confirmed swing level.
-                    </span>
-                  </div>
+                  <NoneDetected message="No Break of Structure detected — price has not closed beyond any confirmed swing level." />
                 )}
+              </CardContent>
+            </Card>
+
+            {/* ── Liquidity (Phase 3D) ── */}
+            <Card className="bg-card border-border">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-mono uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                  <Droplets className="h-4 w-4 text-primary" />
+                  Liquidity — equal highs/lows & sweep detection
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pb-4">
+                {(() => {
+                  const liq = data.marketStructure.liquidity;
+                  const hasSweep = liq.sweepCount > 0;
+                  return hasSweep ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                      <div className={`flex flex-col gap-0.5 p-4 rounded-lg border ${
+                        liq.lastSweepDirection === 'buy-side' ? 'bg-red-400/5 border-red-400/30' : 'bg-emerald-400/5 border-emerald-400/30'
+                      }`}>
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Last Sweep</span>
+                        <span className={`font-mono text-lg font-bold ${liq.lastSweepDirection === 'buy-side' ? 'text-red-400' : 'text-emerald-400'}`}>
+                          {liq.lastSweepDirection === 'buy-side' ? 'Buy-Side' : 'Sell-Side'}
+                        </span>
+                        <span className="font-mono text-xs text-muted-foreground capitalize">
+                          {liq.lastSweepDirection === 'buy-side' ? 'Bearish rejection' : 'Bullish rejection'}
+                        </span>
+                      </div>
+                      <StatCard label="Sweep Price" value={liq.lastSweepPrice !== null ? formatPrice(liq.lastSweepPrice) : '—'} />
+                      <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Rejection</span>
+                        <span className="font-mono text-lg font-bold">
+                          {liq.lastSweepRejection !== null ? `${(liq.lastSweepRejection * 100).toFixed(0)}%` : '—'}
+                        </span>
+                        {liq.lastSweepRejection !== null && (
+                          <StrengthBar value={liq.lastSweepRejection} color={liq.lastSweepDirection === 'buy-side' ? 'bg-red-400' : 'bg-emerald-400'} />
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Confidence</span>
+                        <span className="font-mono text-lg font-bold">
+                          {liq.lastSweepConfidence !== null ? `${liq.lastSweepConfidence}%` : '—'}
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Pools / Sweeps</span>
+                        <span className="font-mono text-lg font-bold">{liq.levelCount} / {liq.sweepCount}</span>
+                        <span className="font-mono text-xs text-muted-foreground">levels swept</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <NoneDetected message={`No confirmed liquidity sweeps — ${liq.levelCount} liquidity pool${liq.levelCount !== 1 ? 's' : ''} tracked.`} />
+                    </div>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+
+            {/* ── Order Blocks (Phase 3E) ── */}
+            <Card className="bg-card border-border">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-mono uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                  <Box className="h-4 w-4 text-primary" />
+                  Order Blocks — institutional demand & supply zones
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pb-4">
+                {(() => {
+                  const ob = data.marketStructure.orderBlocks;
+                  const hasBull = ob.lastBullishHigh !== null;
+                  const hasBear = ob.lastBearishHigh !== null;
+                  if (!hasBull && !hasBear) {
+                    return <NoneDetected message="No order blocks detected — a confirmed BOS is required to form an order block." />;
+                  }
+                  return (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between px-1">
+                        <span className="font-mono text-xs text-muted-foreground">{ob.activeCount} active zone{ob.activeCount !== 1 ? 's' : ''}</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {hasBull && (
+                          <div className={`p-4 rounded-lg border ${ob.lastBullishMitigated ? 'bg-muted/20 border-border opacity-60' : 'bg-emerald-400/5 border-emerald-400/30'}`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="font-mono text-xs font-semibold text-emerald-400">Bullish Order Block</span>
+                              <Badge variant="outline" className={`font-mono text-xs ${ob.lastBullishMitigated ? 'text-muted-foreground border-muted' : 'text-emerald-400 border-emerald-400/30'}`}>
+                                {ob.lastBullishMitigated ? 'Mitigated' : 'Active'}
+                              </Badge>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <span className="font-mono text-xs text-muted-foreground block">High</span>
+                                <span className="font-mono text-sm font-bold text-emerald-400">{formatPrice(ob.lastBullishHigh!)}</span>
+                              </div>
+                              <div>
+                                <span className="font-mono text-xs text-muted-foreground block">Low</span>
+                                <span className="font-mono text-sm font-bold text-emerald-400">{formatPrice(ob.lastBullishLow!)}</span>
+                              </div>
+                            </div>
+                            {ob.lastBullishConfidence !== null && (
+                              <div className="mt-2">
+                                <span className="font-mono text-xs text-muted-foreground">Confidence: {ob.lastBullishConfidence}%</span>
+                                <StrengthBar value={ob.lastBullishConfidence / 100} color="bg-emerald-400" />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {hasBear && (
+                          <div className={`p-4 rounded-lg border ${ob.lastBearishMitigated ? 'bg-muted/20 border-border opacity-60' : 'bg-red-400/5 border-red-400/30'}`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="font-mono text-xs font-semibold text-red-400">Bearish Order Block</span>
+                              <Badge variant="outline" className={`font-mono text-xs ${ob.lastBearishMitigated ? 'text-muted-foreground border-muted' : 'text-red-400 border-red-400/30'}`}>
+                                {ob.lastBearishMitigated ? 'Mitigated' : 'Active'}
+                              </Badge>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <span className="font-mono text-xs text-muted-foreground block">High</span>
+                                <span className="font-mono text-sm font-bold text-red-400">{formatPrice(ob.lastBearishHigh!)}</span>
+                              </div>
+                              <div>
+                                <span className="font-mono text-xs text-muted-foreground block">Low</span>
+                                <span className="font-mono text-sm font-bold text-red-400">{formatPrice(ob.lastBearishLow!)}</span>
+                              </div>
+                            </div>
+                            {ob.lastBearishConfidence !== null && (
+                              <div className="mt-2">
+                                <span className="font-mono text-xs text-muted-foreground">Confidence: {ob.lastBearishConfidence}%</span>
+                                <StrengthBar value={ob.lastBearishConfidence / 100} color="bg-red-400" />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+
+            {/* ── Fair Value Gaps (Phase 3F) ── */}
+            <Card className="bg-card border-border">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-mono uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                  <Divide className="h-4 w-4 text-primary" />
+                  Fair Value Gaps — three-candle imbalances
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pb-4">
+                {(() => {
+                  const fvg = data.marketStructure.fairValueGaps;
+                  const hasBull = fvg.lastBullishGapHigh !== null;
+                  const hasBear = fvg.lastBearishGapHigh !== null;
+                  if (!hasBull && !hasBear) {
+                    return <NoneDetected message="No fair value gaps detected in the current candle window." />;
+                  }
+                  return (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between px-1">
+                        <span className="font-mono text-xs text-muted-foreground">{fvg.activeCount} active gap{fvg.activeCount !== 1 ? 's' : ''} (unfilled)</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {hasBull && (
+                          <div className={`p-4 rounded-lg border ${fvg.lastBullishStatus === 'mitigated' ? 'bg-muted/20 border-border opacity-60' : 'bg-emerald-400/5 border-emerald-400/30'}`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="font-mono text-xs font-semibold text-emerald-400">Bullish FVG</span>
+                              <Badge variant="outline" className={`font-mono text-xs capitalize ${
+                                fvg.lastBullishStatus === 'active' ? 'text-emerald-400 border-emerald-400/30' :
+                                fvg.lastBullishStatus === 'partial' ? 'text-yellow-400 border-yellow-400/30' :
+                                'text-muted-foreground border-muted'
+                              }`}>
+                                {fvg.lastBullishStatus ?? '—'}
+                              </Badge>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 mb-2">
+                              <div>
+                                <span className="font-mono text-xs text-muted-foreground block">Gap High</span>
+                                <span className="font-mono text-sm font-bold">{formatPrice(fvg.lastBullishGapHigh!)}</span>
+                              </div>
+                              <div>
+                                <span className="font-mono text-xs text-muted-foreground block">Gap Low</span>
+                                <span className="font-mono text-sm font-bold">{formatPrice(fvg.lastBullishGapLow!)}</span>
+                              </div>
+                            </div>
+                            <span className="font-mono text-xs text-muted-foreground">Filled: {fvg.lastBullishFillPct ?? 0}%</span>
+                            <StrengthBar value={(fvg.lastBullishFillPct ?? 0) / 100} color="bg-yellow-400" />
+                          </div>
+                        )}
+                        {hasBear && (
+                          <div className={`p-4 rounded-lg border ${fvg.lastBearishStatus === 'mitigated' ? 'bg-muted/20 border-border opacity-60' : 'bg-red-400/5 border-red-400/30'}`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="font-mono text-xs font-semibold text-red-400">Bearish FVG</span>
+                              <Badge variant="outline" className={`font-mono text-xs capitalize ${
+                                fvg.lastBearishStatus === 'active' ? 'text-red-400 border-red-400/30' :
+                                fvg.lastBearishStatus === 'partial' ? 'text-yellow-400 border-yellow-400/30' :
+                                'text-muted-foreground border-muted'
+                              }`}>
+                                {fvg.lastBearishStatus ?? '—'}
+                              </Badge>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 mb-2">
+                              <div>
+                                <span className="font-mono text-xs text-muted-foreground block">Gap High</span>
+                                <span className="font-mono text-sm font-bold">{formatPrice(fvg.lastBearishGapHigh!)}</span>
+                              </div>
+                              <div>
+                                <span className="font-mono text-xs text-muted-foreground block">Gap Low</span>
+                                <span className="font-mono text-sm font-bold">{formatPrice(fvg.lastBearishGapLow!)}</span>
+                              </div>
+                            </div>
+                            <span className="font-mono text-xs text-muted-foreground">Filled: {fvg.lastBearishFillPct ?? 0}%</span>
+                            <StrengthBar value={(fvg.lastBearishFillPct ?? 0) / 100} color="bg-yellow-400" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+
+            {/* ── Premium & Discount (Phase 3G) ── */}
+            <Card className="bg-card border-border">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-mono uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                  <DollarSign className="h-4 w-4 text-primary" />
+                  Premium & Discount — swing range positioning
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pb-4">
+                {(() => {
+                  const pd = data.marketStructure.premiumDiscount;
+                  if (!pd.available || pd.currentZone === null) {
+                    return <NoneDetected message="Not enough swing data to compute premium/discount zones." />;
+                  }
+                  const zoneColor =
+                    pd.currentZone === 'premium' ? 'text-red-400' :
+                    pd.currentZone === 'discount' ? 'text-emerald-400' : 'text-yellow-400';
+                  const zoneBg =
+                    pd.currentZone === 'premium' ? 'bg-red-400/5 border-red-400/30' :
+                    pd.currentZone === 'discount' ? 'bg-emerald-400/5 border-emerald-400/30' :
+                    'bg-yellow-400/5 border-yellow-400/30';
+                  const pos = pd.pricePosition ?? 0;
+                  return (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className={`flex flex-col gap-0.5 p-4 rounded-lg border ${zoneBg}`}>
+                          <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Current Zone</span>
+                          <span className={`font-mono text-lg font-bold capitalize ${zoneColor}`}>{pd.currentZone}</span>
+                          <span className="font-mono text-xs text-muted-foreground">
+                            {pd.currentZone === 'premium' ? 'Look to sell' : pd.currentZone === 'discount' ? 'Look to buy' : 'Neutral'}
+                          </span>
+                        </div>
+                        <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
+                          <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Position</span>
+                          <span className="font-mono text-lg font-bold">{pos}%</span>
+                          <span className="font-mono text-xs text-muted-foreground">of swing range</span>
+                        </div>
+                        <StatCard label="Range High" value={pd.rangeHigh !== null ? formatPrice(pd.rangeHigh) : '—'} accent="text-emerald-400" />
+                        <StatCard label="Range Low"  value={pd.rangeLow  !== null ? formatPrice(pd.rangeLow)  : '—'} accent="text-red-400" />
+                      </div>
+
+                      {/* Visual range bar */}
+                      <div className="px-1">
+                        <div className="flex justify-between font-mono text-xs text-muted-foreground mb-1">
+                          <span>Discount (0–25%)</span>
+                          <span>Equil. ({pd.equilibrium !== null ? formatPrice(pd.equilibrium) : '—'})</span>
+                          <span>Premium (75–100%)</span>
+                        </div>
+                        <div className="relative h-3 bg-muted rounded-full overflow-hidden">
+                          <div className="absolute inset-y-0 left-0 w-1/4 bg-emerald-400/20 rounded-l-full" />
+                          <div className="absolute inset-y-0 right-0 w-1/4 bg-red-400/20 rounded-r-full" />
+                          <div
+                            className={`absolute top-0.5 h-2 w-2 rounded-full -translate-x-1/2 transition-all ${zoneColor.replace('text-', 'bg-')}`}
+                            style={{ left: `${pos}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between font-mono text-xs text-muted-foreground mt-1">
+                          <span>{pd.rangeLow !== null ? formatPrice(pd.rangeLow) : '—'}</span>
+                          <span>{pd.rangeHigh !== null ? formatPrice(pd.rangeHigh) : '—'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </CardContent>
             </Card>
 
@@ -566,7 +868,6 @@ export default function Analysis() {
                 </TabsTrigger>
               </TabsList>
 
-              {/* ── Reasons ── */}
               <TabsContent value="reasons">
                 <Card className="bg-card border-border">
                   <CardHeader className="pb-2">
@@ -594,51 +895,31 @@ export default function Analysis() {
                 </Card>
               </TabsContent>
 
-              {/* ── Indicators ── */}
               <TabsContent value="indicators">
                 <Card className="bg-card border-border">
                   <CardContent className="p-0">
                     <div className="divide-y divide-border/30">
-                      {/* RSI */}
                       <IndRow label="RSI (14)" value={`${data.indicators.rsi.value}`} signal={data.indicators.rsi.signal}
                         extra={data.indicators.rsi.overbought ? 'Overbought' : data.indicators.rsi.oversold ? 'Oversold' : 'Neutral'} />
-
-                      {/* MACD */}
                       <IndRow label="MACD Line"    value={data.indicators.macd.macdLine.toFixed(6)}    signal={data.indicators.macd.signal} />
                       <IndRow label="MACD Signal"  value={data.indicators.macd.signalLine.toFixed(6)}  extra={data.indicators.macd.crossover !== 'none' ? `${data.indicators.macd.crossover} crossover` : ''} />
                       <IndRow label="MACD Hist"    value={data.indicators.macd.histogram.toFixed(6)} />
-
-                      {/* EMA */}
                       <IndRow label="EMA 20"  value={formatPrice(data.indicators.ema.ema20)}  extra={data.indicators.ema.priceAboveEma20 ? 'Price above' : 'Price below'} />
                       <IndRow label="EMA 50"  value={formatPrice(data.indicators.ema.ema50)}  extra={data.indicators.ema.priceAboveEma50 ? 'Price above' : 'Price below'} />
                       <IndRow label="EMA 200" value={formatPrice(data.indicators.ema.ema200)} signal={data.indicators.ema.signal} extra={data.indicators.ema.priceAboveEma200 ? 'Price above' : 'Price below'} />
-
-                      {/* SMA */}
                       <IndRow label="SMA 20" value={formatPrice(data.indicators.sma.sma20)} />
                       <IndRow label="SMA 50" value={formatPrice(data.indicators.sma.sma50)} />
-
-                      {/* Bollinger */}
                       <IndRow label="BB Upper"  value={formatPrice(data.indicators.bollingerBands.upper)} />
                       <IndRow label="BB Middle" value={formatPrice(data.indicators.bollingerBands.middle)} />
                       <IndRow label="BB Lower"  value={formatPrice(data.indicators.bollingerBands.lower)} signal={data.indicators.bollingerBands.signal} extra={`%B ${(data.indicators.bollingerBands.pctB * 100).toFixed(0)}%`} />
-
-                      {/* ATR */}
                       <IndRow label="ATR (14)" value={data.indicators.atr.value.toFixed(6)} extra={`${pct(data.indicators.atr.pctOfPrice)} of price · ${data.indicators.atr.volatility}`} />
-
-                      {/* ADX */}
                       <IndRow label="ADX (14)" value={`${data.indicators.adx.adx}`} signal={data.indicators.adx.signal} extra={data.indicators.adx.trending ? 'Trending' : 'Ranging'} />
                       <IndRow label="+DI / −DI" value={`${data.indicators.adx.plusDI} / ${data.indicators.adx.minusDI}`} />
-
-                      {/* Stochastic RSI */}
                       <IndRow label="StochRSI %K" value={`${data.indicators.stochasticRsi.k}`} signal={data.indicators.stochasticRsi.signal}
                         extra={data.indicators.stochasticRsi.overbought ? 'Overbought' : data.indicators.stochasticRsi.oversold ? 'Oversold' : ''} />
                       <IndRow label="StochRSI %D" value={`${data.indicators.stochasticRsi.d}`} />
-
-                      {/* Volume */}
                       <IndRow label="Volume"  value={data.indicators.volume.current.toLocaleString()} signal={data.indicators.volume.signal}
                         extra={`${data.indicators.volume.ratio.toFixed(2)}× avg · ${data.indicators.volume.trend}`} />
-
-                      {/* Trend */}
                       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/40">
                         <span className="font-mono text-xs text-muted-foreground w-40 shrink-0">Trend (S/M/L)</span>
                         <div className="flex gap-2">
@@ -649,8 +930,6 @@ export default function Analysis() {
                           <TrendPill dir={data.indicators.trend.longTerm} />
                         </div>
                       </div>
-
-                      {/* Support / Resistance */}
                       {data.indicators.supportResistance.nearestSupport !== null && (
                         <IndRow label="Nearest Support"    value={formatPrice(data.indicators.supportResistance.nearestSupport)} extra="↑ support" />
                       )}
@@ -662,7 +941,6 @@ export default function Analysis() {
                 </Card>
               </TabsContent>
 
-              {/* ── Patterns ── */}
               <TabsContent value="patterns">
                 <Card className="bg-card border-border">
                   <CardContent className="pt-4 pb-4">
@@ -687,32 +965,18 @@ export default function Analysis() {
                             <div className="flex items-center justify-between mb-2">
                               <span className="font-mono font-semibold text-sm">{p.name}</span>
                               <div className="flex items-center gap-2">
-                                <Badge
-                                  variant="outline"
-                                  className={`font-mono text-xs ${
-                                    p.type === 'bullish' ? 'text-emerald-400 border-emerald-400/30' :
-                                    p.type === 'bearish' ? 'text-red-400 border-red-400/30' :
-                                    'text-muted-foreground'
-                                  }`}
-                                >
+                                <Badge variant="outline" className={`font-mono text-xs ${
+                                  p.type === 'bullish' ? 'text-emerald-400 border-emerald-400/30' :
+                                  p.type === 'bearish' ? 'text-red-400 border-red-400/30' :
+                                  'text-muted-foreground'
+                                }`}>
                                   {p.type.toUpperCase()}
                                 </Badge>
-                                <span className="font-mono text-xs text-muted-foreground">
-                                  {Math.round(p.strength * 100)}%
-                                </span>
+                                <span className="font-mono text-xs text-muted-foreground">{Math.round(p.strength * 100)}%</span>
                               </div>
                             </div>
                             <p className="text-xs text-muted-foreground">{p.description}</p>
-                            {/* Strength bar */}
-                            <div className="mt-2 h-1 bg-muted rounded-full overflow-hidden">
-                              <div
-                                className={`h-full rounded-full ${
-                                  p.type === 'bullish' ? 'bg-emerald-400' :
-                                  p.type === 'bearish' ? 'bg-red-400' : 'bg-muted-foreground'
-                                }`}
-                                style={{ width: `${p.strength * 100}%` }}
-                              />
-                            </div>
+                            <StrengthBar value={p.strength} color={p.type === 'bullish' ? 'bg-emerald-400' : p.type === 'bearish' ? 'bg-red-400' : 'bg-muted-foreground'} />
                           </motion.div>
                         ))}
                       </div>
@@ -722,7 +986,6 @@ export default function Analysis() {
               </TabsContent>
             </Tabs>
 
-            {/* ── Footer ── */}
             <p className="font-mono text-xs text-muted-foreground text-center">
               Analysis computed from {data.candleCount} × {data.timeframe} candles at {new Date(data.timestamp).toLocaleTimeString()}.
               For informational purposes only — not financial advice.
@@ -731,7 +994,6 @@ export default function Analysis() {
         )}
       </AnimatePresence>
 
-      {/* ── Empty state (no data, not loading, no error) ── */}
       {!data && !isLoading && !error && (
         <Card className="bg-card border-border border-dashed">
           <CardContent className="py-16 text-center">
