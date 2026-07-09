@@ -21,7 +21,7 @@
 
 import type { MarketCandle } from "../market-data/types.js";
 import { Timeframe }         from "../market-data/types.js";
-import type { AnalysisResult, IndicatorSet, CandlestickPattern, MarketStructureSummary, TrendDirection } from "./types.js";
+import type { AnalysisResult, BosSummary, IndicatorSet, CandlestickPattern, MarketStructureSummary, TrendDirection } from "./types.js";
 import { analyzeMarketStructure } from "./market-structure/engine.js";
 import type { MarketStructureResult } from "./market-structure/types.js";
 import { computeRsi }              from "./indicators/rsi.js";
@@ -160,6 +160,29 @@ function structureDirectionFromSwing(latestSwingType: MarketStructureResult["lat
   return "sideways";
 }
 
+function buildBosSummary(structure: MarketStructureResult): BosSummary {
+  // Pick the more recent of the two BOS events as the "active" one.
+  const { lastBullishBOS: bull, lastBearishBOS: bear } = structure;
+  let active = null;
+  if (bull && bear) {
+    active = bull.breakIndex >= bear.breakIndex ? bull : bear;
+  } else {
+    active = bull ?? bear ?? null;
+  }
+
+  if (active === null) {
+    return { detected: false, direction: null, price: null, strength: null, confidence: null };
+  }
+
+  return {
+    detected:   true,
+    direction:  active.direction,
+    price:      active.breakPrice,
+    strength:   active.strength,
+    confidence: active.confidence,
+  };
+}
+
 function buildMarketStructureSummary(structure: MarketStructureResult): MarketStructureSummary {
   return {
     marketTrend:        structure.currentTrend,
@@ -168,6 +191,7 @@ function buildMarketStructureSummary(structure: MarketStructureResult): MarketSt
     swingHigh:          structure.latestSwingHigh?.price ?? null,
     swingLow:           structure.latestSwingLow?.price ?? null,
     marketPhase:        structure.marketPhase,
+    bos:                buildBosSummary(structure),
   };
 }
 
@@ -179,6 +203,39 @@ function generateStructureReason(structure: MarketStructureSummary): string {
   const trendLabel = marketTrend === "bullish" ? "bullish" : marketTrend === "bearish" ? "bearish" : "sideways";
   const phaseLabel = marketPhase === "trending" ? "confirmed" : marketPhase === "reversal" ? "reversing" : "ranging";
   return `Market structure ${trendLabel} (${phaseLabel}) — latest swing is a ${latestSwing}.`;
+}
+
+function generateBOSReason(bos: BosSummary): string | null {
+  if (!bos.detected || bos.direction === null) return null;
+  const dir = bos.direction === "bullish" ? "Bullish" : "Bearish";
+  const side = bos.direction === "bullish" ? "above prior swing high" : "below prior swing low";
+  const price = bos.price !== null ? ` at ${bos.price.toFixed(5)}` : "";
+  const strengthPct = bos.strength !== null ? ` (strength ${(bos.strength * 100).toFixed(0)}%` : "";
+  const confPct = bos.confidence !== null ? `, confidence ${bos.confidence}%)` : strengthPct ? ")" : "";
+  return `${dir} BOS confirmed — price closed ${side}${price}${strengthPct}${confPct}.`;
+}
+
+/**
+ * Nudge confidence up/down based on whether the latest BOS aligns with
+ * the final decision. Adjustment is proportional to BOS strength so weak
+ * breaks barely move the needle.
+ *
+ * Aligning BOS   → +strength × 8 points (max +8)
+ * Opposing BOS   → −strength × 5 points (max −5)
+ */
+function applyBOSConfidenceAdjustment(
+  baseConfidence: number,
+  decision: AnalysisResult["decision"],
+  bos: BosSummary,
+): number {
+  if (!bos.detected || bos.direction === null || bos.strength === null) {
+    return baseConfidence;
+  }
+  const aligns =
+    (decision === "BUY" && bos.direction === "bullish") ||
+    (decision === "SELL" && bos.direction === "bearish");
+  const delta = aligns ? bos.strength * 8 : -(bos.strength * 5);
+  return Math.min(100, Math.max(0, Math.round(baseConfidence + delta)));
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -207,9 +264,15 @@ export function runAnalysis(input: EngineInput): AnalysisResult {
   const riskLevel  = computeRiskLevel(indicators);
   const trend      = deriveTrend(indicators);
   const risk       = computeRisk(decision, currentBid, currentAsk, indicators);
-  const structure  = analyzeMarketStructure(candles, { swingLength: 2 });
+  const structure       = analyzeMarketStructure(candles, { swingLength: 2 });
   const marketStructure = buildMarketStructureSummary(structure);
-  const reasons    = [...generateReasons(indicators, patterns, score), generateStructureReason(marketStructure)];
+  const adjustedConfidence = applyBOSConfidenceAdjustment(confidence, decision, marketStructure.bos);
+  const bosReason = generateBOSReason(marketStructure.bos);
+  const reasons   = [
+    ...generateReasons(indicators, patterns, score),
+    generateStructureReason(marketStructure),
+    ...(bosReason !== null ? [bosReason] : []),
+  ];
 
   return {
     symbol,
@@ -217,7 +280,7 @@ export function runAnalysis(input: EngineInput): AnalysisResult {
     timestamp:      new Date().toISOString(),
     candleCount:    candles.length,
     decision,
-    confidence,
+    confidence:     adjustedConfidence,
     riskLevel,
     trend,
     entryPrice:      risk.entryPrice,

@@ -19,6 +19,12 @@ import type { TrendDirection } from "../types.js";
 export interface StructureCandle {
   high: number;
   low: number;
+  /**
+   * Closing price. Optional for swing detection (which only needs high/low)
+   * but required for BOS detection: without it the BOS detector skips the
+   * candle (no close data → no confirmed BOS).
+   */
+  close?: number;
   timestamp: Date | string | number;
 }
 
@@ -63,14 +69,76 @@ export interface StructureState {
   /** Label of whichever swing (high or low) formed most recently. */
   latestSwingType: SwingLabel | null;
   marketPhase: MarketPhase;
+  // ── BOS additions ────────────────────────────────────────────────────────
+  /** Most recent confirmed bullish BOS event, if any. */
+  lastBullishBOS: BOSResult | null;
+  /** Most recent confirmed bearish BOS event, if any. */
+  lastBearishBOS: BOSResult | null;
+  /**
+   * Direction of the most recent BOS (whichever of the two is more recent by
+   * `breakIndex`). `null` when no BOS has been detected yet.
+   */
+  currentStructureBias: BOSDirection | null;
 }
 
 export interface MarketStructureResult extends StructureState {
   swingHighs: SwingPoint[];
   swingLows: SwingPoint[];
+  /** All bullish BOS events in chronological order. */
+  allBullishBOS: BOSResult[];
+  /** All bearish BOS events in chronological order. */
+  allBearishBOS: BOSResult[];
 }
 
 export interface MarketStructureOptions {
   /** Number of candles required on each side of a pivot. Default 2. */
   swingLength?: number;
+  /** Options forwarded to the BOS detector. */
+  bos?: BOSOptions;
+}
+
+// ─── Break of Structure (Phase 3B) ────────────────────────────────────────────
+
+export type BOSDirection = "bullish" | "bearish";
+
+/**
+ * A single confirmed Break of Structure event.
+ *
+ * A BOS is only valid when price CLOSES beyond the prior confirmed swing
+ * level — wick-only breaks are rejected. Optional `confirmationDistance`
+ * and `minCandleClosePct` filters tighten the signal further.
+ */
+export interface BOSResult {
+  /** Whether price broke above a swing high (bullish) or below a swing low (bearish). */
+  direction: BOSDirection;
+  /** The confirmed swing point whose level was broken. */
+  brokenSwing: SwingPoint;
+  /** Close price of the confirmation candle. */
+  breakPrice: number;
+  /** Index into the candle array of the confirmation candle. */
+  breakIndex: number;
+  /** The candle that closed beyond the swing level. */
+  confirmationCandle: StructureCandle;
+  /** 0–1: how decisively price closed beyond the level (calibrated to 0.5 % breach = 1.0). */
+  strength: number;
+  /** 0–100: composite confidence in the signal (breach size + structure maturity + candle body quality). */
+  confidence: number;
+}
+
+export interface BOSOptions {
+  /**
+   * Minimum additional price distance the close must clear beyond the swing
+   * level (in the same units as the price). Default 0 — any close beyond the
+   * level qualifies.
+   */
+  confirmationDistance?: number;
+  /**
+   * Minimum position of the close within the candle's [low, high] range:
+   *   - Bullish BOS: `(close − low) / (high − low) ≥ minCandleClosePct`
+   *     (e.g. 0.5 = close must be in the top half of the candle).
+   *   - Bearish BOS: `(high − close) / (high − low) ≥ minCandleClosePct`
+   *     (close must be in the bottom half).
+   * Rejects indecisive doji/spinning-top closes. Default 0 (no filter).
+   */
+  minCandleClosePct?: number;
 }

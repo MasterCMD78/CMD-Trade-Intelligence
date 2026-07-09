@@ -127,6 +127,22 @@ export type SwingLabel = "HH" | "HL" | "LH" | "LL";
 export type MarketPhase = "trending" | "ranging" | "reversal";
 
 /**
+ * Flat BOS summary exposed on `MarketStructureSummary`.
+ * `detected` is false when no BOS was found in the candle window.
+ */
+export interface BosSummary {
+  detected: boolean;
+  /** Direction of the most recent BOS; null when none detected. */
+  direction: "bullish" | "bearish" | null;
+  /** Close price of the confirmation candle; null when none detected. */
+  price: number | null;
+  /** 0–1 breach strength; null when none detected. */
+  strength: number | null;
+  /** 0–100 composite confidence; null when none detected. */
+  confidence: number | null;
+}
+
+/**
  * Flat summary of the Market Structure Engine's output, exposed on
  * `AnalysisResult`. Derived purely from swing highs/lows — no RSI, MACD,
  * EMA, or other indicator feeds into these fields.
@@ -148,6 +164,8 @@ export interface MarketStructureSummary {
   /** Price of the latest confirmed swing low. */
   swingLow: number | null;
   marketPhase: MarketPhase;
+  /** Break of Structure summary (Phase 3B). */
+  bos: BosSummary;
 }
 
 // ─── Full Indicator Bundle ─────────────────────────────────────────────────────

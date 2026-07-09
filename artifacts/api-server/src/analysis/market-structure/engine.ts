@@ -10,11 +10,12 @@
  * the same way `classifier.ts` and `trend-engine.ts` do.
  */
 
-import type { MarketPhase, MarketStructureOptions, MarketStructureResult, StructureCandle } from "./types.js";
+import type { BOSDirection, MarketPhase, MarketStructureOptions, MarketStructureResult, StructureCandle } from "./types.js";
 import type { TrendDirection } from "../types.js";
 import { detectSwings } from "./swing-detector.js";
 import { classifySwings } from "./classifier.js";
 import { computeTrend } from "./trend-engine.js";
+import { detectBOS } from "./bos-detector.js";
 
 const DEFAULT_SWING_LENGTH = 2;
 
@@ -54,6 +55,21 @@ export function analyzeMarketStructure(
 
   const marketPhase = computeMarketPhase(currentTrend, previousTrend);
 
+  // ── Break of Structure ───────────────────────────────────────────────────
+  const { bullishBOS, bearishBOS, lastBullishBOS, lastBearishBOS } =
+    detectBOS(candles, classifiedHighs, classifiedLows, options.bos ?? {});
+
+  // The most recent BOS (by breakIndex) determines currentStructureBias.
+  let currentStructureBias: BOSDirection | null = null;
+  if (lastBullishBOS !== null && lastBearishBOS !== null) {
+    currentStructureBias =
+      lastBullishBOS.breakIndex >= lastBearishBOS.breakIndex ? "bullish" : "bearish";
+  } else if (lastBullishBOS !== null) {
+    currentStructureBias = "bullish";
+  } else if (lastBearishBOS !== null) {
+    currentStructureBias = "bearish";
+  }
+
   return {
     currentTrend,
     previousTrend,
@@ -63,6 +79,11 @@ export function analyzeMarketStructure(
     marketPhase,
     swingHighs: classifiedHighs,
     swingLows: classifiedLows,
+    lastBullishBOS,
+    lastBearishBOS,
+    currentStructureBias,
+    allBullishBOS: bullishBOS,
+    allBearishBOS: bearishBOS,
   };
 }
 
@@ -70,3 +91,4 @@ export * from "./types.js";
 export { detectSwings } from "./swing-detector.js";
 export { classifySwings } from "./classifier.js";
 export { computeTrend } from "./trend-engine.js";
+export { detectBOS } from "./bos-detector.js";

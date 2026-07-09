@@ -1,0 +1,117 @@
+You are continuing development of CMD Trade Intelligence.
+
+Read the entire repository before making any modifications.
+
+Current status:
+
+- Authentication working
+- Dashboard working
+- Markets working
+- WebSocket streaming working
+- AI Analysis Engine working
+- Market Structure Engine complete
+- Structure classifications (HH, HL, LH, LL) complete
+- Trend Engine complete
+- Structure State complete
+- Frontend Market Structure panel complete
+- 78/78 tests passing
+- TypeScript clean
+- End-to-end verification passing
+
+Do NOT redesign the architecture.
+
+Build the next production-quality module:
+
+========================
+BREAK OF STRUCTURE (BOS)
+========================
+
+Requirements
+
+1. Create a new BOS module inside the market-structure package.
+
+2. BOS must only be detected from CONFIRMED swings produced by the existing Swing Detection Engine.
+
+3. Detect:
+
+- Bullish BOS
+- Bearish BOS
+
+4. A BOS is valid only when:
+
+- Price CLOSES beyond the previous confirmed swing.
+- Ignore wick-only breaks.
+- Configurable confirmation distance.
+- Configurable minimum candle close percentage.
+
+5. BOS must expose:
+
+- direction
+- brokenSwing
+- breakPrice
+- breakIndex
+- confirmationCandle
+- strength score
+- confidence
+
+6. Update StructureState with:
+
+- lastBullishBOS
+- lastBearishBOS
+- currentStructureBias
+
+7. Integrate BOS into the AI Analysis Engine.
+
+8. BOS must influence confidence scoring.
+
+9. Update API response to include:
+
+marketStructure:
+    bos:
+        detected
+        direction
+        price
+        strength
+        confidence
+
+10. Update the frontend Analysis page with a new Break of Structure panel displaying:
+
+- BOS Status
+- Direction
+- Break Price
+- Strength
+- Confidence
+
+11. Add comprehensive tests covering:
+
+- Bullish BOS
+- Bearish BOS
+- False wick breaks
+- Consecutive BOS
+- Weak breaks
+- Strong breaks
+- Flat markets
+- Gaps
+- Edge cases
+
+12. Requirements
+
+- Zero TypeScript errors
+- Existing tests continue passing
+- New BOS tests pass
+- Build succeeds
+- End-to-end verification succeeds
+
+13. Do not implement CHOCH yet.
+
+14. Preserve the existing architecture and build BOS as an extensible production-quality module that CHOCH, Liquidity Sweeps, Order Blocks, and FVG detection will reuse.
+
+15. Produce a final report containing:
+
+- Files modified
+- Architecture additions
+- New interfaces
+- New APIs
+- Tests added
+- Test results
+- Suggested next phase (CHOCH)

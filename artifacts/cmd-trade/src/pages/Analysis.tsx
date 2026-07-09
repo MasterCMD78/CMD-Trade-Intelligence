@@ -11,7 +11,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   BrainCircuit, TrendingUp, TrendingDown, Minus,
   RefreshCw, AlertTriangle, CheckCircle, Shield,
-  Activity, BarChart2, Layers, Eye, Clock, GitBranch,
+  Activity, BarChart2, Layers, Eye, Clock, GitBranch, Zap,
 } from 'lucide-react';
 
 // ─── Types matching the API ───────────────────────────────────────────────────
@@ -56,6 +56,13 @@ interface AnalysisResult {
     swingHigh: number | null;
     swingLow: number | null;
     marketPhase: 'trending' | 'ranging' | 'reversal';
+    bos: {
+      detected: boolean;
+      direction: 'bullish' | 'bearish' | null;
+      price: number | null;
+      strength: number | null;
+      confidence: number | null;
+    };
   };
 }
 
@@ -469,6 +476,79 @@ export default function Analysis() {
                     </span>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* ── Break of Structure ── */}
+            <Card className="bg-card border-border">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-mono uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-primary" />
+                  Break of Structure — close-confirmed swing breaks
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pb-4">
+                {data.marketStructure.bos.detected ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                    {/* BOS Status */}
+                    <div className={`flex flex-col gap-0.5 p-4 rounded-lg border ${
+                      data.marketStructure.bos.direction === 'bullish'
+                        ? 'bg-emerald-400/5 border-emerald-400/30'
+                        : 'bg-red-400/5 border-red-400/30'
+                    }`}>
+                      <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">BOS Status</span>
+                      <span className={`font-mono text-lg font-bold ${
+                        data.marketStructure.bos.direction === 'bullish' ? 'text-emerald-400' : 'text-red-400'
+                      }`}>Confirmed</span>
+                    </div>
+                    {/* Direction */}
+                    <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
+                      <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Direction</span>
+                      <TrendPill dir={data.marketStructure.bos.direction ?? 'sideways'} />
+                    </div>
+                    {/* Break Price */}
+                    <StatCard
+                      label="Break Price"
+                      value={data.marketStructure.bos.price !== null ? formatPrice(data.marketStructure.bos.price) : '—'}
+                      accent={data.marketStructure.bos.direction === 'bullish' ? 'text-emerald-400' : 'text-red-400'}
+                    />
+                    {/* Strength */}
+                    <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
+                      <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Strength</span>
+                      <span className="font-mono text-lg font-bold">
+                        {data.marketStructure.bos.strength !== null
+                          ? `${(data.marketStructure.bos.strength * 100).toFixed(0)}%`
+                          : '—'}
+                      </span>
+                      {data.marketStructure.bos.strength !== null && (
+                        <div className="mt-1 h-1 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              data.marketStructure.bos.direction === 'bullish' ? 'bg-emerald-400' : 'bg-red-400'
+                            }`}
+                            style={{ width: `${(data.marketStructure.bos.strength ?? 0) * 100}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                    {/* Confidence */}
+                    <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
+                      <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Confidence</span>
+                      <span className="font-mono text-lg font-bold">
+                        {data.marketStructure.bos.confidence !== null
+                          ? `${data.marketStructure.bos.confidence}%`
+                          : '—'}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3 py-3 px-4 bg-muted/20 rounded-lg border border-border/50">
+                    <Minus className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="font-mono text-sm text-muted-foreground">
+                      No Break of Structure detected — price has not closed beyond any confirmed swing level.
+                    </span>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
