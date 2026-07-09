@@ -1,0 +1,267 @@
+You are continuing development of CMD Trade Intelligence.
+
+IMPORTANT:
+
+Before making any changes:
+
+- Read and understand the entire repository.
+- Continue from the existing architecture.
+- Do NOT redesign working modules.
+- Reuse existing components wherever possible.
+
+Current project status:
+
+- Authentication complete
+- Dashboard complete
+- Markets complete
+- WebSocket streaming complete
+- AI Analysis Engine complete
+- Market Structure Engine complete
+- Break of Structure (BOS) complete
+- Change of Character (CHOCH) complete
+- 129+ tests passing
+- TypeScript clean
+- End-to-end verification passing
+
+Your objective is to build the complete Smart Money Foundation.
+
+====================================
+PHASE 3D–3G SMART MONEY FOUNDATION
+====================================
+
+Implement the following production-quality modules.
+
+------------------------------------
+1. Liquidity Sweep Engine
+------------------------------------
+
+Detect:
+
+- Equal Highs
+- Equal Lows
+- Buy-side Liquidity
+- Sell-side Liquidity
+
+Detect valid liquidity sweeps.
+
+Requirements:
+
+- Wick-only sweep detection
+- Close-back-inside confirmation
+- Configurable tolerance
+- Configurable equal-high distance
+- Configurable equal-low distance
+- Reject weak sweeps
+
+For every sweep return:
+
+- direction
+- sweepPrice
+- sweepIndex
+- sweptLiquidity
+- rejectionStrength
+- confidence
+
+------------------------------------
+2. Order Block Engine
+------------------------------------
+
+Using existing:
+
+- Market Structure
+- BOS
+- CHOCH
+- Liquidity Sweeps
+
+Detect institutional Order Blocks.
+
+Identify:
+
+- Bullish Order Blocks
+- Bearish Order Blocks
+
+Return:
+
+- price range
+- mitigation status
+- creation candle
+- validity
+- strength
+- confidence
+
+Support invalidation when broken.
+
+------------------------------------
+3. Fair Value Gap Engine
+------------------------------------
+
+Detect three-candle imbalances.
+
+Identify:
+
+- Bullish FVG
+- Bearish FVG
+
+Track:
+
+- gap size
+- fill percentage
+- fully mitigated
+- partially mitigated
+- active
+
+Return confidence and quality score.
+
+------------------------------------
+4. Premium & Discount Engine
+------------------------------------
+
+Using confirmed swing highs and lows:
+
+Calculate:
+
+- Equilibrium
+- Premium Zone
+- Discount Zone
+
+Determine whether current price is inside:
+
+- Premium
+- Discount
+- Equilibrium
+
+------------------------------------
+5. AI Integration
+------------------------------------
+
+Integrate every module into the AI Analysis Engine.
+
+Update decision confidence using:
+
+- Market Structure
+- BOS
+- CHOCH
+- Liquidity Sweep
+- Order Block
+- Fair Value Gap
+- Premium/Discount
+
+Generate human-readable reasons explaining each contribution.
+
+------------------------------------
+6. API
+------------------------------------
+
+Extend Analysis API response with:
+
+marketStructure:
+    liquidity
+    orderBlocks
+    fairValueGaps
+    premiumDiscount
+
+Use additive changes only.
+
+------------------------------------
+7. Frontend
+------------------------------------
+
+Extend the Analysis page with new sections:
+
+- Liquidity
+- Order Blocks
+- Fair Value Gaps
+- Premium / Discount
+
+Display:
+
+- Status
+- Direction
+- Confidence
+- Strength
+- Current active zones
+
+Maintain existing UI consistency.
+
+------------------------------------
+8. Testing
+------------------------------------
+
+Add comprehensive unit tests for:
+
+Liquidity Sweeps:
+- buy-side
+- sell-side
+- false sweeps
+- weak sweeps
+- equal highs
+- equal lows
+
+Order Blocks:
+- bullish
+- bearish
+- mitigated
+- invalidated
+
+Fair Value Gaps:
+- bullish
+- bearish
+- partial fills
+- complete fills
+
+Premium/Discount:
+- equilibrium
+- premium
+- discount
+
+Integration tests covering interaction with:
+
+- BOS
+- CHOCH
+- Market Structure
+
+------------------------------------
+9. Quality
+------------------------------------
+
+Before completion:
+
+- Run all tests
+- Run typecheck
+- Build the project
+- Verify end-to-end functionality
+- Fix every regression
+
+Maintain backward compatibility.
+
+Do NOT redesign existing architecture.
+
+------------------------------------
+10. Do NOT implement
+------------------------------------
+
+Do NOT implement:
+
+- Multi-Timeframe Engine
+- Economic News Filter
+- AI Learning Engine
+- Trade Execution Engine
+
+Leave these for future phases.
+
+------------------------------------
+11. Final Report
+------------------------------------
+
+Produce a report including:
+
+- Files modified
+- Architecture additions
+- New interfaces
+- New API fields
+- Frontend additions
+- Tests added
+- Test results
+- Build status
+- Suggested next phase:
+  Multi-Timeframe Market Structure.
