@@ -266,6 +266,10 @@ export interface IndicatorSet {
   supportResistance: SupportResistanceResult;
 }
 
+// ─── Multi-Timeframe (Phase 3H) ───────────────────────────────────────────────
+// Re-export the full MTF result type from its own module for convenience.
+export type { MultiTimeframeResult } from "./multi-timeframe/types.js";
+
 // ─── Final Analysis Result ────────────────────────────────────────────────────
 
 export interface AnalysisResult {
@@ -285,4 +289,10 @@ export interface AnalysisResult {
   patterns: CandlestickPattern[];
   reasons: string[];
   marketStructure: MarketStructureSummary;
+  /**
+   * Multi-Timeframe Analysis (Phase 3H).
+   * Present when the route fetches candles for multiple timeframes.
+   * Absent when the analysis is run in single-TF mode.
+   */
+  multiTimeframe?: import("./multi-timeframe/types.js").MultiTimeframeResult;
 }

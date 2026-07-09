@@ -17,6 +17,8 @@
 
 import type { MarketCandle } from "../market-data/types.js";
 import { Timeframe }         from "../market-data/types.js";
+import { buildMultiTimeframeResult } from "./multi-timeframe/engine.js";
+import type { MTFKey } from "./multi-timeframe/types.js";
 import type {
   AnalysisResult,
   BosSummary,
@@ -405,6 +407,12 @@ export interface EngineInput {
   candles:   MarketCandle[];
   currentBid: number;
   currentAsk: number;
+  /**
+   * Multi-timeframe candle sets (Phase 3H).
+   * When provided the MTF analysis is computed and attached to the result.
+   * Keys are MTFKey strings (m1, m5, m15, m30, h1, h4, daily, weekly).
+   */
+  allTimeframeCandles?: Partial<Record<MTFKey, MarketCandle[]>>;
 }
 
 /**
@@ -412,7 +420,7 @@ export interface EngineInput {
  * All computation is synchronous (pure functions) — no I/O inside this function.
  */
 export function runAnalysis(input: EngineInput): AnalysisResult {
-  const { symbol, timeframe, candles, currentBid, currentAsk } = input;
+  const { symbol, timeframe, candles, currentBid, currentAsk, allTimeframeCandles } = input;
   const currentPrice = (currentBid + currentAsk) / 2;
 
   const indicators = computeIndicators(candles, currentPrice);
@@ -428,7 +436,18 @@ export function runAnalysis(input: EngineInput): AnalysisResult {
   const fullStructure   = analyzeMarketStructureFull(candles, currentPrice, { swingLength: 2 });
   const marketStructure = buildMarketStructureSummary(fullStructure);
 
-  const adjustedConfidence = applySmartMoneyConfidenceAdjustment(confidence, decision, marketStructure);
+  // Smart Money confidence adjustment (Phase 3D–3G)
+  const smAdjustedConfidence = applySmartMoneyConfidenceAdjustment(confidence, decision, marketStructure);
+
+  // Multi-Timeframe analysis (Phase 3H)
+  const mtf = allTimeframeCandles
+    ? buildMultiTimeframeResult(allTimeframeCandles, currentPrice)
+    : undefined;
+
+  // Apply MTF confidence adjustment on top of the Smart Money adjustment
+  const adjustedConfidence = mtf
+    ? Math.min(100, Math.max(0, smAdjustedConfidence + mtf.confidenceAdjustment))
+    : smAdjustedConfidence;
 
   const bosReason  = generateBOSReason(marketStructure.bos);
   const liqReason  = generateLiquidityReason(marketStructure.liquidity);
@@ -444,6 +463,8 @@ export function runAnalysis(input: EngineInput): AnalysisResult {
     ...(obReason   !== null ? [obReason]   : []),
     ...(fvgReason  !== null ? [fvgReason]  : []),
     ...(pdReason   !== null ? [pdReason]   : []),
+    // MTF reasons appended last (Phase 3H)
+    ...(mtf ? mtf.reasons : []),
   ];
 
   return {
@@ -463,6 +484,7 @@ export function runAnalysis(input: EngineInput): AnalysisResult {
     patterns,
     reasons,
     marketStructure,
+    multiTimeframe: mtf,
   };
 }
 

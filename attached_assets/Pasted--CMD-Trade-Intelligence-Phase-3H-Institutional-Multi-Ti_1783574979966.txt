@@ -1,0 +1,293 @@
+# CMD Trade Intelligence
+
+## Phase 3H — Institutional Multi-Timeframe Market Structure Engine
+
+You are continuing development of CMD Trade Intelligence.
+
+Before making any changes:
+
+- Read and understand the entire repository.
+- Continue from the existing architecture.
+- Do NOT redesign working modules.
+- Reuse existing components wherever possible.
+
+Current verified status:
+
+- Authentication complete
+- Dashboard complete
+- Markets complete
+- WebSocket streaming complete
+- AI Analysis Engine complete
+- Market Structure complete
+- BOS complete
+- CHOCH complete
+- Liquidity Sweep Engine complete
+- Order Block Engine complete
+- Fair Value Gap Engine complete
+- Premium / Discount Engine complete
+- 115+ tests passing
+- TypeScript clean
+- End-to-end verification passing
+
+=========================================
+OBJECTIVE
+=========================================
+
+Build a production-quality Institutional Multi-Timeframe Analysis Engine.
+
+This engine will become the foundation for the Institutional Decision Engine.
+
+Do NOT implement the Institutional Decision Engine yet.
+
+=========================================
+1. Multi-Timeframe Engine
+=========================================
+
+Create a reusable Multi-Timeframe module.
+
+Support:
+
+- Monthly
+- Weekly
+- Daily
+- H4
+- H1
+- M30
+- M15
+- M5
+- M1
+
+Each timeframe must independently calculate:
+
+- Market Structure
+- Trend
+- BOS
+- CHOCH
+- Liquidity
+- Order Blocks
+- Fair Value Gaps
+- Premium / Discount
+
+Reuse existing engines.
+
+Do NOT duplicate logic.
+
+=========================================
+2. Alignment Engine
+=========================================
+
+Determine:
+
+- Full Bullish Alignment
+- Full Bearish Alignment
+- Mixed Structure
+- Internal Pullback
+- External Trend
+- Internal Trend
+- Trend Conflict
+- Neutral
+
+Return an alignment score.
+
+=========================================
+3. Bias Engine
+=========================================
+
+Produce:
+
+- Higher Timeframe Bias
+- Intermediate Bias
+- Lower Timeframe Bias
+- Overall Institutional Bias
+
+Possible values:
+
+- Strong Bullish
+- Bullish
+- Neutral
+- Bearish
+- Strong Bearish
+
+=========================================
+4. Confluence Engine
+=========================================
+
+Measure agreement between timeframes.
+
+Generate:
+
+- Alignment Percentage
+- Confluence Score
+- Confidence Adjustment
+
+Higher timeframe agreement should increase AI confidence.
+
+Timeframe conflicts should reduce confidence.
+
+=========================================
+5. AI Integration
+=========================================
+
+Integrate Multi-Timeframe Analysis into the AI Analysis Engine.
+
+Use MTFA when calculating:
+
+- BUY
+- SELL
+- HOLD
+
+Generate human-readable reasons such as:
+
+- Higher timeframe bullish.
+- H4 and H1 aligned.
+- M15 pullback inside H4 uptrend.
+- Daily bearish conflicts with H1 bullish.
+- Strong institutional confluence.
+
+=========================================
+6. API
+=========================================
+
+Extend the Analysis API response.
+
+Include:
+
+multiTimeframe:
+
+- monthly
+- weekly
+- daily
+- h4
+- h1
+- m30
+- m15
+- m5
+- m1
+
+Each timeframe should expose:
+
+- trend
+- marketStructure
+- BOS
+- CHOCH
+- Liquidity
+- OrderBlocks
+- FVG
+- PremiumDiscount
+
+Also include:
+
+- overallBias
+- alignmentScore
+- confluenceScore
+- institutionalBias
+
+Do not remove or rename existing API fields.
+
+=========================================
+7. Frontend
+=========================================
+
+Extend the Analysis page.
+
+Create a Multi-Timeframe Dashboard.
+
+Display:
+
+- Every timeframe
+- Trend
+- BOS
+- CHOCH
+- Liquidity
+- Order Blocks
+- FVG
+- Premium/Discount
+- Overall Bias
+- Alignment Score
+- Institutional Bias
+- Confluence Score
+
+Maintain existing design consistency.
+
+=========================================
+8. Testing
+=========================================
+
+Add comprehensive tests covering:
+
+- Bullish alignment
+- Bearish alignment
+- Mixed alignment
+- Internal pullbacks
+- External trend continuation
+- Trend conflicts
+- Neutral markets
+- Missing timeframe data
+- Partial data
+- Edge cases
+
+Also verify:
+
+- AI confidence adjustments
+- API responses
+- Frontend rendering
+
+=========================================
+9. Quality
+=========================================
+
+Before completion:
+
+- Run all tests
+- Run typecheck
+- Build the project
+- Verify end-to-end functionality
+- Fix every regression
+
+Maintain backward compatibility.
+
+=========================================
+10. DO NOT IMPLEMENT
+=========================================
+
+Do NOT implement:
+
+- Economic News Engine
+- AI Learning Engine
+- Trade Execution
+- Auto Trading
+- Broker Integration
+
+These belong to later phases.
+
+=========================================
+11. Final Report
+=========================================
+
+Produce a complete report containing:
+
+- Files modified
+- Architecture additions
+- New interfaces
+- New APIs
+- Frontend additions
+- Tests added
+- Test results
+- Build status
+- Remaining issues (if any)
+
+Finally, recommend the next implementation phase:
+
+Phase 4 — Institutional Decision Engine, which will combine:
+
+- Indicators
+- Market Structure
+- BOS
+- CHOCH
+- Liquidity
+- Order Blocks
+- Fair Value Gaps
+- Premium / Discount
+- Multi-Timeframe Alignment
+
+into a single institutional BUY / SELL / HOLD decision system with explainable AI reasoning.
