@@ -24,10 +24,12 @@ function candle(
   high: number, low: number, close: number, open: number, ts: number,
 ): MarketCandle {
   return {
+    symbol: "TEST",
     high, low, close, open,
     volume: 1000,
     timestamp: new Date(ts),
     timeframe: Timeframe.H1,
+    closed: true,
   };
 }
 
@@ -37,15 +39,16 @@ function candle(
  */
 function bullishCandles(n = 50): MarketCandle[] {
   const candles: MarketCandle[] = [];
-  let base = 100;
   for (let i = 0; i < n; i++) {
-    const step = (i % 5 === 0) ? -0.5 : 0.8; // small pullbacks, larger advances
-    const high  = base + 1.5;
-    const low   = base - 0.5;
-    const close = base + step;
-    const open  = base;
+    // Rising baseline with a slow oscillation so swingLength=2 pivots are
+    // clean local extrema — each swing high/low prints higher than the last
+    // (HH/HL), producing a confirmed bullish trend.
+    const price = 100 + i * 0.6 + 4 * Math.sin(i / 1.5);
+    const high  = price + 1;
+    const low   = price - 1;
+    const open  = price - 0.2;
+    const close = price + 0.2;
     candles.push(candle(high, low, close, open, Date.now() + i * 60_000));
-    base += step;
   }
   return candles;
 }
@@ -55,15 +58,15 @@ function bullishCandles(n = 50): MarketCandle[] {
  */
 function bearishCandles(n = 50): MarketCandle[] {
   const candles: MarketCandle[] = [];
-  let base = 200;
   for (let i = 0; i < n; i++) {
-    const step = (i % 5 === 0) ? 0.5 : -0.8;
-    const high  = base + 0.5;
-    const low   = base - 1.5;
-    const close = base + step;
-    const open  = base;
+    // Falling baseline with a slow oscillation — mirror of bullishCandles —
+    // produces confirmed LH/LL swings (bearish trend).
+    const price = 200 - i * 0.6 - 4 * Math.sin(i / 1.5);
+    const high  = price + 1;
+    const low   = price - 1;
+    const open  = price + 0.2;
+    const close = price - 0.2;
     candles.push(candle(high, low, close, open, Date.now() + i * 60_000));
-    base += step;
   }
   return candles;
 }

@@ -67,6 +67,57 @@ interface PremiumDiscountSummary {
   rangeLow: number | null;
 }
 
+// ─── Multi-Timeframe types (Phase 3H) ─────────────────────────────────────────
+
+type MTFKey = 'm1' | 'm5' | 'm15' | 'm30' | 'h1' | 'h4' | 'daily' | 'weekly';
+
+const MTF_LABELS: Record<MTFKey, string> = {
+  weekly: 'Weekly', daily: 'Daily', h4: 'H4', h1: 'H1',
+  m30: 'M30', m15: 'M15', m5: 'M5', m1: 'M1',
+};
+const MTF_ORDER: MTFKey[] = ['weekly', 'daily', 'h4', 'h1', 'm30', 'm15', 'm5', 'm1'];
+
+type AlignmentType =
+  | 'full_bullish' | 'full_bearish' | 'internal_pullback' | 'external_trend'
+  | 'internal_trend' | 'trend_conflict' | 'mixed' | 'neutral';
+
+type InstitutionalBias = 'strong_bullish' | 'bullish' | 'neutral' | 'bearish' | 'strong_bearish';
+
+interface ChochSummary {
+  detected: boolean;
+  direction: 'bullish' | 'bearish' | null;
+  confidence: number | null;
+}
+
+interface TimeframeSnapshot {
+  candleCount: number;
+  trend: TrendDir;
+  marketPhase: 'trending' | 'ranging' | 'reversal';
+  bos: { detected: boolean; direction: 'bullish' | 'bearish' | null; price: number | null; strength: number | null; confidence: number | null };
+  choch: ChochSummary;
+  liquidity: LiquiditySummary;
+  orderBlocks: OrderBlockSummary;
+  fairValueGaps: FairValueGapSummary;
+  premiumDiscount: PremiumDiscountSummary;
+  swingHigh: number | null;
+  swingLow: number | null;
+}
+
+interface MultiTimeframeResult {
+  timeframes: Partial<Record<MTFKey, TimeframeSnapshot>>;
+  reasons: string[];
+  availableCount: number;
+  alignmentType: AlignmentType;
+  alignmentScore: number;
+  higherTimeframeBias: InstitutionalBias;
+  intermediateBias: InstitutionalBias;
+  lowerTimeframeBias: InstitutionalBias;
+  overallBias: InstitutionalBias;
+  institutionalBias: InstitutionalBias;
+  confluenceScore: number;
+  confidenceAdjustment: number;
+}
+
 interface AnalysisResult {
   symbol: string;
   timeframe: string;
@@ -114,6 +165,7 @@ interface AnalysisResult {
     fairValueGaps: FairValueGapSummary;
     premiumDiscount: PremiumDiscountSummary;
   };
+  multiTimeframe?: MultiTimeframeResult;
 }
 
 // ─── Fetch hook ───────────────────────────────────────────────────────────────
@@ -853,6 +905,140 @@ export default function Analysis() {
                 })()}
               </CardContent>
             </Card>
+
+            {/* ── Multi-Timeframe Structure (Phase 3H) ── */}
+            {data.multiTimeframe && (() => {
+              const mtf = data.multiTimeframe;
+              const biasColor: Record<InstitutionalBias, string> = {
+                strong_bullish: 'text-emerald-400',
+                bullish:        'text-emerald-400/80',
+                neutral:        'text-yellow-400',
+                bearish:        'text-red-400/80',
+                strong_bearish: 'text-red-400',
+              };
+              const biasBg: Record<InstitutionalBias, string> = {
+                strong_bullish: 'bg-emerald-400/10 border-emerald-400/40',
+                bullish:        'bg-emerald-400/5 border-emerald-400/20',
+                neutral:        'bg-yellow-400/5 border-yellow-400/20',
+                bearish:        'bg-red-400/5 border-red-400/20',
+                strong_bearish: 'bg-red-400/10 border-red-400/40',
+              };
+              const biasLabel: Record<InstitutionalBias, string> = {
+                strong_bullish: 'Strong Bullish',
+                bullish:        'Bullish',
+                neutral:        'Neutral',
+                bearish:        'Bearish',
+                strong_bearish: 'Strong Bearish',
+              };
+              const alignmentLabel: Record<AlignmentType, string> = {
+                full_bullish:       'Full Bullish Alignment',
+                full_bearish:       'Full Bearish Alignment',
+                internal_pullback:  'Internal Pullback (Buy Setup)',
+                external_trend:     'External Trend (Caution)',
+                internal_trend:     'Internal Trend',
+                trend_conflict:     'Trend Conflict',
+                mixed:              'Mixed Signals',
+                neutral:            'Neutral',
+              };
+              return (
+                <Card className="bg-card border-border">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-mono uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                      <Layers className="h-4 w-4 text-primary" />
+                      Multi-Timeframe Structure — institutional alignment & confluence
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pb-4 space-y-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className={`flex flex-col gap-0.5 p-4 rounded-lg border ${biasBg[mtf.institutionalBias]}`}>
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Institutional Bias</span>
+                        <span className={`font-mono text-lg font-bold ${biasColor[mtf.institutionalBias]}`}>
+                          {biasLabel[mtf.institutionalBias]}
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Alignment</span>
+                        <span className="font-mono text-sm font-bold text-foreground">{alignmentLabel[mtf.alignmentType]}</span>
+                        <span className="font-mono text-xs text-muted-foreground">Score: {mtf.alignmentScore}/100</span>
+                      </div>
+                      <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Confluence</span>
+                        <span className="font-mono text-lg font-bold">{mtf.confluenceScore}%</span>
+                        <StrengthBar value={mtf.confluenceScore / 100} color="bg-primary" />
+                      </div>
+                      <div className="flex flex-col gap-0.5 p-4 bg-muted/30 rounded-lg border border-border">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Confidence Adj.</span>
+                        <span className={`font-mono text-lg font-bold ${mtf.confidenceAdjustment > 0 ? 'text-emerald-400' : mtf.confidenceAdjustment < 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                          {mtf.confidenceAdjustment > 0 ? '+' : ''}{mtf.confidenceAdjustment}
+                        </span>
+                        <span className="font-mono text-xs text-muted-foreground">{mtf.availableCount}/8 TFs available</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="flex flex-col gap-0.5 p-3 bg-muted/20 rounded-lg border border-border/50">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Higher TF (W/D)</span>
+                        <span className={`font-mono text-sm font-bold ${biasColor[mtf.higherTimeframeBias]}`}>{biasLabel[mtf.higherTimeframeBias]}</span>
+                      </div>
+                      <div className="flex flex-col gap-0.5 p-3 bg-muted/20 rounded-lg border border-border/50">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Intermediate (H4/H1)</span>
+                        <span className={`font-mono text-sm font-bold ${biasColor[mtf.intermediateBias]}`}>{biasLabel[mtf.intermediateBias]}</span>
+                      </div>
+                      <div className="flex flex-col gap-0.5 p-3 bg-muted/20 rounded-lg border border-border/50">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Lower TF</span>
+                        <span className={`font-mono text-sm font-bold ${biasColor[mtf.lowerTimeframeBias]}`}>{biasLabel[mtf.lowerTimeframeBias]}</span>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full font-mono text-xs">
+                        <thead>
+                          <tr className="border-b border-border/50 text-muted-foreground">
+                            <th className="text-left py-2 pr-3">Timeframe</th>
+                            <th className="text-left py-2 pr-3">Trend</th>
+                            <th className="text-left py-2 pr-3">Phase</th>
+                            <th className="text-left py-2 pr-3">BOS</th>
+                            <th className="text-left py-2 pr-3">CHoCH</th>
+                            <th className="text-left py-2 pr-3">P&D Zone</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {MTF_ORDER.map((key) => {
+                            const snap = mtf.timeframes[key];
+                            if (!snap) {
+                              return (
+                                <tr key={key} className="border-b border-border/20 opacity-40">
+                                  <td className="py-2 pr-3">{MTF_LABELS[key]}</td>
+                                  <td colSpan={5} className="py-2 text-muted-foreground">No data</td>
+                                </tr>
+                              );
+                            }
+                            return (
+                              <tr key={key} className="border-b border-border/20">
+                                <td className="py-2 pr-3 font-semibold text-foreground">{MTF_LABELS[key]}</td>
+                                <td className="py-2 pr-3"><TrendPill dir={snap.trend} /></td>
+                                <td className="py-2 pr-3 capitalize text-muted-foreground">{snap.marketPhase}</td>
+                                <td className="py-2 pr-3">
+                                  {snap.bos.detected
+                                    ? <span className={snap.bos.direction === 'bullish' ? 'text-emerald-400' : 'text-red-400'}>{snap.bos.direction}</span>
+                                    : <span className="text-muted-foreground">—</span>}
+                                </td>
+                                <td className="py-2 pr-3">
+                                  {snap.choch.detected
+                                    ? <span className={snap.choch.direction === 'bullish' ? 'text-emerald-400' : 'text-red-400'}>{snap.choch.direction}</span>
+                                    : <span className="text-muted-foreground">—</span>}
+                                </td>
+                                <td className="py-2 pr-3 capitalize text-muted-foreground">{snap.premiumDiscount.currentZone ?? '—'}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })()}
 
             {/* ── Tabs: Reasons | Indicators | Patterns ── */}
             <Tabs defaultValue="reasons">

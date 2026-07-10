@@ -11,3 +11,4 @@
 - [Route sub-path conventions](route-subpaths.md) — /api/dashboard, /api/risk, /api/analysis have no root GET; only sub-paths like /summary exist; this is intentional and pre-existing
 - [Wilder smoothing + oscillator/trend conflict](wilder-smoothing-and-oscillator-trend-conflict.md) — ADX final step needs true-average not running-sum smoothing; mean-reversion oscillators must be dampened (not zeroed) when ADX confirms a strong trend
 - [Market structure trend/phase derivation](market-structure-trend-phase.md) — comparing trend vs. raw prior swing-label entry misses reversals hidden behind a transient sideways blip; track last directional trend instead
+- [Synthetic candle fixtures for swing-detection tests](swing-detection-test-fixtures.md) — monotonic-step candle series rarely produce clean HH/HL or LH/LL swing pairs; use a trending sine wave instead
