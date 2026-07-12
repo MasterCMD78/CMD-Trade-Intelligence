@@ -270,6 +270,9 @@ export interface IndicatorSet {
 // Re-export the full MTF result type from its own module for convenience.
 export type { MultiTimeframeResult } from "./multi-timeframe/types.js";
 
+// ─── Institutional Decision Engine (Phase 4) ─────────────────────────────────
+export type { DecisionEngineResult } from "./decision-engine/types.js";
+
 // ─── Final Analysis Result ────────────────────────────────────────────────────
 
 export interface AnalysisResult {
@@ -295,4 +298,9 @@ export interface AnalysisResult {
    * Absent when the analysis is run in single-TF mode.
    */
   multiTimeframe?: import("./multi-timeframe/types.js").MultiTimeframeResult;
+  /**
+   * Institutional Decision Engine (Phase 4).
+   * Combines every module above into one explainable BUY/SELL/HOLD/WAIT call.
+   */
+  decisionEngine: import("./decision-engine/types.js").DecisionEngineResult;
 }

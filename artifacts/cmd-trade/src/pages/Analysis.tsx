@@ -166,6 +166,53 @@ interface AnalysisResult {
     premiumDiscount: PremiumDiscountSummary;
   };
   multiTimeframe?: MultiTimeframeResult;
+  decisionEngine: DecisionEngineResult;
+}
+
+// ─── Institutional Decision Engine types (Phase 4) ────────────────────────────
+
+type InstitutionalDecision = 'BUY' | 'SELL' | 'HOLD' | 'WAIT';
+type TradeGrade = 'A+' | 'A' | 'B' | 'C' | 'D';
+type MarketState = 'trending' | 'ranging' | 'accumulation' | 'distribution' | 'reversal' | 'expansion' | 'consolidation';
+
+interface ScoreBreakdown {
+  name: string;
+  score: number;
+  confidence: number;
+  explanation: string;
+  displayScore: number;
+  weight: number;
+}
+
+interface ConfidenceBundle {
+  overallConfidence: number;
+  institutionalScore: number;
+  decisionConfidence: number;
+  riskConfidence: number;
+}
+
+interface DecisionRiskPlan {
+  entry: number;
+  stopLoss: number;
+  takeProfit1: number;
+  takeProfit2: number;
+  takeProfit3: number;
+  riskRewardRatio: number;
+  positionSize: number;
+  maxRiskPct: number;
+  tradeManagement: string;
+}
+
+interface DecisionEngineResult {
+  decision: InstitutionalDecision;
+  institutionalScore: number;
+  tradeGrade: TradeGrade;
+  confidence: ConfidenceBundle;
+  marketState: MarketState;
+  riskLevel: RiskLevel;
+  risk: DecisionRiskPlan;
+  reasons: string[];
+  breakdown: ScoreBreakdown[];
 }
 
 // ─── Fetch hook ───────────────────────────────────────────────────────────────
@@ -210,6 +257,31 @@ const TREND_CONFIG = {
   bearish:  { label: 'Bearish',  color: 'text-red-400',     icon: TrendingDown },
   sideways: { label: 'Sideways', color: 'text-yellow-400',  icon: Minus },
 } as const;
+
+const INSTITUTIONAL_DECISION_CONFIG = {
+  BUY:  { label: 'BUY',  color: 'text-emerald-400', bg: 'bg-emerald-400/10 border-emerald-400/30', icon: TrendingUp },
+  SELL: { label: 'SELL', color: 'text-red-400',     bg: 'bg-red-400/10 border-red-400/30',         icon: TrendingDown },
+  HOLD: { label: 'HOLD', color: 'text-yellow-400',  bg: 'bg-yellow-400/10 border-yellow-400/30',   icon: Minus },
+  WAIT: { label: 'WAIT', color: 'text-sky-400',     bg: 'bg-sky-400/10 border-sky-400/30',         icon: Clock },
+} as const;
+
+const TRADE_GRADE_COLOR: Record<TradeGrade, string> = {
+  'A+': 'text-emerald-400',
+  A:    'text-emerald-400/80',
+  B:    'text-yellow-400',
+  C:    'text-orange-400',
+  D:    'text-red-400',
+};
+
+const MARKET_STATE_LABEL: Record<MarketState, string> = {
+  trending:      'Trending',
+  ranging:       'Ranging',
+  accumulation:  'Accumulation',
+  distribution:  'Distribution',
+  reversal:      'Reversal',
+  expansion:     'Expansion',
+  consolidation: 'Consolidation',
+};
 
 const SIGNAL_COLOR: Record<Signal, string> = {
   buy:     'text-emerald-400',
@@ -532,6 +604,108 @@ export default function Analysis() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* ── Institutional Decision Engine (Phase 4) ── */}
+            {(() => {
+              const de = data.decisionEngine;
+              const cfg = INSTITUTIONAL_DECISION_CONFIG[de.decision];
+              const Icon = cfg.icon;
+              const isActive = de.decision === 'BUY' || de.decision === 'SELL';
+              return (
+                <Card className={`bg-card border ${cfg.bg}`}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-mono uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                      <BrainCircuit className="h-4 w-4 text-primary" />
+                      Institutional Decision Engine — combined score across every module
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pb-4 space-y-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+                      <div className={`flex flex-col items-center justify-center gap-2 p-4 rounded-lg border ${cfg.bg}`}>
+                        <div className={`flex items-center gap-2 ${cfg.color}`}>
+                          <Icon className="h-6 w-6" />
+                          <span className="font-bold text-2xl tracking-tight">{cfg.label}</span>
+                        </div>
+                        <span className={`font-mono text-xs font-semibold ${TRADE_GRADE_COLOR[de.tradeGrade]}`}>
+                          Grade {de.tradeGrade}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col gap-1 p-4 bg-muted/30 rounded-lg border border-border">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Institutional Score</span>
+                        <span className={`font-mono text-2xl font-bold ${cfg.color}`}>{de.institutionalScore}<span className="text-sm text-muted-foreground">/100</span></span>
+                        <StrengthBar value={de.institutionalScore / 100} color={de.institutionalScore >= 65 ? 'bg-emerald-400' : de.institutionalScore >= 45 ? 'bg-yellow-400' : 'bg-red-400'} />
+                      </div>
+
+                      <div className="flex flex-col gap-1 p-4 bg-muted/30 rounded-lg border border-border">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Market State</span>
+                        <span className="font-mono text-lg font-bold text-foreground">{MARKET_STATE_LABEL[de.marketState]}</span>
+                        <span className="font-mono text-xs text-muted-foreground capitalize">{de.riskLevel} risk environment</span>
+                      </div>
+
+                      <div className="flex flex-col gap-1 p-4 bg-muted/30 rounded-lg border border-border">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Overall Confidence</span>
+                        <span className="font-mono text-2xl font-bold text-foreground">{de.confidence.overallConfidence}%</span>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          Decision {de.confidence.decisionConfidence}% · Risk {de.confidence.riskConfidence}%
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Risk plan */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                      <StatCard label="Entry" value={isActive ? formatPrice(de.risk.entry) : '—'} />
+                      <StatCard label="Stop Loss" value={isActive ? formatPrice(de.risk.stopLoss) : '—'} accent="text-red-400" />
+                      <StatCard label="TP1" value={isActive ? formatPrice(de.risk.takeProfit1) : '—'} accent="text-emerald-400" />
+                      <StatCard label="TP2" value={isActive ? formatPrice(de.risk.takeProfit2) : '—'} accent="text-emerald-400" />
+                      <StatCard label="TP3" value={isActive ? formatPrice(de.risk.takeProfit3) : '—'} accent="text-emerald-400" />
+                      <StatCard
+                        label="Position Size"
+                        value={isActive ? `${de.risk.positionSize}%` : '—'}
+                        sub={isActive ? `Risk ${de.risk.maxRiskPct}% · RR 1:${de.risk.riskRewardRatio.toFixed(2)}` : undefined}
+                      />
+                    </div>
+                    {isActive && (
+                      <div className="flex items-start gap-3 px-4 py-3 bg-muted/20 rounded-lg border border-border/50">
+                        <Shield className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                        <span className="font-mono text-xs text-muted-foreground">{de.risk.tradeManagement}</span>
+                      </div>
+                    )}
+
+                    {/* Score breakdown */}
+                    <div className="space-y-2">
+                      <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Decision Breakdown — per-module contribution</span>
+                      <div className="space-y-1.5">
+                        {de.breakdown.map((b) => {
+                          const dirColor = b.score > 0.05 ? 'text-emerald-400' : b.score < -0.05 ? 'text-red-400' : 'text-muted-foreground';
+                          const barColor = b.score > 0.05 ? 'bg-emerald-400' : b.score < -0.05 ? 'bg-red-400' : 'bg-muted-foreground';
+                          return (
+                            <div key={b.name} className="flex items-center gap-3 py-1.5 px-3 rounded-md bg-muted/10">
+                              <span className="font-mono text-xs text-muted-foreground w-32 shrink-0">{b.name}</span>
+                              <div className="flex-1">
+                                <StrengthBar value={b.displayScore / 100} color={barColor} />
+                              </div>
+                              <span className={`font-mono text-xs font-semibold w-12 text-right ${dirColor}`}>{b.displayScore}%</span>
+                              <span className="font-mono text-xs text-muted-foreground w-12 text-right shrink-0">w={b.weight.toFixed(2)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Reasons */}
+                    <ul className="space-y-1.5 pt-2 border-t border-border/50">
+                      {de.reasons.map((reason, i) => (
+                        <li key={i} className="flex items-start gap-3 text-sm">
+                          <span className="font-mono text-xs text-primary mt-0.5 shrink-0">{String(i + 1).padStart(2, '0')}</span>
+                          <span className="text-foreground/80">{reason}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              );
+            })()}
 
             {/* ── Market Structure ── */}
             <Card className="bg-card border-border">

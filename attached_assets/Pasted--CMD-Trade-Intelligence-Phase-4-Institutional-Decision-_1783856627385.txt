@@ -1,0 +1,529 @@
+# CMD Trade Intelligence
+
+## Phase 4 — Institutional Decision Engine
+
+You are continuing development of CMD Trade Intelligence.
+
+IMPORTANT
+
+Before making any changes:
+
+- Read and understand the entire repository.
+- Read all existing architecture.
+- Continue from the existing codebase.
+- Do NOT redesign working modules.
+- Reuse every existing engine.
+- Do NOT duplicate logic.
+
+Current verified project status:
+
+✅ Authentication
+
+✅ Dashboard
+
+✅ Markets
+
+✅ WebSocket Streaming
+
+✅ Risk Engine
+
+✅ Technical Indicator Engine
+
+✅ AI Analysis Engine
+
+✅ Market Structure
+
+✅ BOS
+
+✅ CHOCH
+
+✅ Liquidity Sweep Engine
+
+✅ Order Block Engine
+
+✅ Fair Value Gap Engine
+
+✅ Premium / Discount Engine
+
+✅ Institutional Multi-Timeframe Engine
+
+✅ 204+ Tests Passing
+
+✅ TypeScript Clean
+
+✅ End-to-End Verification Passing
+
+====================================
+
+OBJECTIVE
+
+====================================
+
+Build the Institutional Decision Engine.
+
+This engine becomes the central brain of CMD Trade Intelligence.
+
+It must combine every existing analysis engine into one explainable institutional trading decision.
+
+Do NOT replace existing modules.
+
+Do NOT redesign architecture.
+
+====================================
+
+1. Decision Engine
+
+====================================
+
+Create a new Decision Engine module.
+
+It must consume results from:
+
+- Technical Indicators
+- Market Structure
+- BOS
+- CHOCH
+- Liquidity Sweeps
+- Order Blocks
+- Fair Value Gaps
+- Premium / Discount
+- Multi-Timeframe Analysis
+- Risk Engine
+
+Every module contributes independently.
+
+====================================
+
+2. Institutional Scoring System
+
+====================================
+
+Create a weighted scoring engine.
+
+Suggested architecture:
+
+Trend Score
+
+Momentum Score
+
+Structure Score
+
+Liquidity Score
+
+Order Block Score
+
+Fair Value Gap Score
+
+Premium / Discount Score
+
+Multi-Timeframe Score
+
+Risk Score
+
+Each module returns:
+
+- score
+- confidence
+- explanation
+
+The Decision Engine combines all scores into:
+
+Institutional Score
+
+(0–100)
+
+====================================
+
+3. Trading Decision
+
+====================================
+
+Generate exactly one decision:
+
+BUY
+
+SELL
+
+HOLD
+
+WAIT
+
+Avoid conflicting outputs.
+
+Decision must be deterministic.
+
+====================================
+
+4. Explainable AI
+
+====================================
+
+Generate detailed human-readable reasons.
+
+Example:
+
+Weekly trend bullish.
+
+Daily trend bullish.
+
+H4 bullish BOS.
+
+H1 bullish CHOCH.
+
+M15 buy-side liquidity sweep.
+
+Bullish Order Block.
+
+Bullish Fair Value Gap.
+
+Current price inside Discount Zone.
+
+EMA alignment bullish.
+
+Strong momentum.
+
+Risk acceptable.
+
+Reasons should explain WHY the AI produced the decision.
+
+====================================
+
+5. Trade Quality Classification
+
+====================================
+
+Return:
+
+A+
+
+A
+
+B
+
+C
+
+D
+
+based on overall institutional quality.
+
+====================================
+
+6. Confidence Engine
+
+====================================
+
+Produce:
+
+Overall Confidence
+
+Institutional Score
+
+Decision Confidence
+
+Risk Confidence
+
+Normalize to 0–100.
+
+Prevent one module from dominating unless intentionally weighted.
+
+====================================
+
+7. Risk Integration
+
+====================================
+
+Use the existing Risk Engine.
+
+Generate:
+
+Suggested Entry
+
+Stop Loss
+
+Take Profit 1
+
+Take Profit 2
+
+Take Profit 3
+
+Risk Reward Ratio
+
+Position Size
+
+Maximum Risk %
+
+Recommended Trade Management
+
+====================================
+
+8. Market State
+
+====================================
+
+Determine:
+
+Trending
+
+Ranging
+
+Accumulation
+
+Distribution
+
+Reversal
+
+Expansion
+
+Consolidation
+
+Use existing Smart Money analysis.
+
+====================================
+
+9. API
+
+====================================
+
+Extend Analysis API.
+
+Return:
+
+decisionEngine:
+
+decision
+
+institutionalScore
+
+tradeGrade
+
+confidence
+
+marketState
+
+entry
+
+stopLoss
+
+takeProfit1
+
+takeProfit2
+
+takeProfit3
+
+riskReward
+
+positionSize
+
+maxRisk
+
+reasons
+
+Do NOT remove existing API fields.
+
+====================================
+
+10. Frontend
+
+====================================
+
+Extend the Analysis page.
+
+Create a Professional Institutional Decision Dashboard.
+
+Display:
+
+Decision
+
+Institutional Score
+
+Trade Grade
+
+Overall Confidence
+
+Market State
+
+Risk Level
+
+Entry
+
+Stop Loss
+
+TP1
+
+TP2
+
+TP3
+
+Risk Reward
+
+Position Size
+
+Reasons
+
+Score Breakdown
+
+Use cards, gauges, progress bars, and color indicators consistent with the existing UI.
+
+====================================
+
+11. Decision Breakdown
+
+====================================
+
+Display contribution of every engine.
+
+Example:
+
+Indicators
+
+82
+
+Market Structure
+
+95
+
+BOS
+
+91
+
+CHOCH
+
+87
+
+Liquidity
+
+90
+
+Order Block
+
+94
+
+FVG
+
+88
+
+Premium / Discount
+
+92
+
+Multi-Timeframe
+
+97
+
+Risk
+
+85
+
+====================================
+
+12. Tests
+
+====================================
+
+Create comprehensive tests for:
+
+Strong BUY
+
+Strong SELL
+
+HOLD
+
+WAIT
+
+Conflicting Signals
+
+High Risk
+
+Low Risk
+
+Strong Multi-Timeframe Alignment
+
+Weak Alignment
+
+Low Liquidity
+
+Flat Market
+
+Edge Cases
+
+Integration Tests
+
+Regression Tests
+
+====================================
+
+13. Quality
+
+====================================
+
+Before completion:
+
+Run every test.
+
+Run typecheck.
+
+Run full build.
+
+Verify end-to-end.
+
+Fix regressions.
+
+Maintain backward compatibility.
+
+====================================
+
+14. DO NOT IMPLEMENT
+
+====================================
+
+Do NOT implement:
+
+Economic News Engine
+
+AI Learning Engine
+
+Broker Integration
+
+Auto Trading
+
+Copy Trading
+
+Portfolio Management
+
+====================================
+
+15. Final Report
+
+====================================
+
+Produce a detailed report containing:
+
+Files modified
+
+Architecture additions
+
+New interfaces
+
+Decision Engine design
+
+Scoring model
+
+API additions
+
+Frontend additions
+
+Tests added
+
+Test results
+
+Build status
+
+End-to-end verification
+
+Remaining recommendations
+
+Finally recommend the next development phase:
+
+Phase 5 — Economic News & Fundamental Intelligence Engine.
+
+The Economic News Engine should integrate macroeconomic events (such as CPI, NFP, FOMC, GDP, and interest-rate decisions) into the Institutional Decision Engine to improve trade filtering and confidence before considering automated execution or AI learning.

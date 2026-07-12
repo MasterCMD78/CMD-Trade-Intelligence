@@ -54,6 +54,7 @@ import {
   deriveTrend,
 } from "./scoring.js";
 import { computeRisk } from "./risk.js";
+import { computeDecisionEngine } from "./decision-engine/engine.js";
 
 // ─── Candle close-price extraction ───────────────────────────────────────────
 
@@ -467,7 +468,7 @@ export function runAnalysis(input: EngineInput): AnalysisResult {
     ...(mtf ? mtf.reasons : []),
   ];
 
-  return {
+  const baseResult: Omit<AnalysisResult, "decisionEngine"> = {
     symbol,
     timeframe,
     timestamp:      new Date().toISOString(),
@@ -486,6 +487,13 @@ export function runAnalysis(input: EngineInput): AnalysisResult {
     marketStructure,
     multiTimeframe: mtf,
   };
+
+  // Institutional Decision Engine (Phase 4) — combines every module above
+  // into one explainable BUY/SELL/HOLD/WAIT call. Computed last since it
+  // reads the fully-assembled result rather than duplicating any detection.
+  const decisionEngine = computeDecisionEngine(baseResult as AnalysisResult, currentBid, currentAsk);
+
+  return { ...baseResult, decisionEngine };
 }
 
 /** Parse a timeframe string to Timeframe enum. Returns H1 as default. */
