@@ -17,6 +17,7 @@
 
 import { computeRisk } from "../risk.js";
 import type { AnalysisResult } from "../types.js";
+import type { NewsAnalysisResult, NewsRisk } from "../news/types.js";
 import type { DecisionRiskPlan, InstitutionalDecision, TradeGrade } from "./types.js";
 
 const MAX_RISK_BY_GRADE: Record<TradeGrade, number> = {
@@ -25,6 +26,14 @@ const MAX_RISK_BY_GRADE: Record<TradeGrade, number> = {
   B: 1.0,
   C: 0.5,
   D: 0.25,
+};
+
+/** Multiplier applied to position size / max risk when a news event is elevating expected volatility. */
+const NEWS_RISK_SCALE: Record<NewsRisk, number> = {
+  low: 1.0,
+  medium: 0.75,
+  high: 0.5,
+  extreme: 0.25,
 };
 
 function flat(entry: number): DecisionRiskPlan {
@@ -47,6 +56,7 @@ export function buildRiskPlan(
   tradeGrade: TradeGrade,
   currentBid: number,
   currentAsk: number,
+  news?: NewsAnalysisResult,
 ): DecisionRiskPlan {
   if (decision === "HOLD" || decision === "WAIT") {
     return flat(currentBid);
@@ -70,7 +80,8 @@ export function buildRiskPlan(
 
   const stopDistance = Math.abs(entry - stopLoss);
   const stopDistanceFraction = entry > 0 ? stopDistance / entry : 0;
-  const maxRiskPct = MAX_RISK_BY_GRADE[tradeGrade];
+  const newsScale = news ? NEWS_RISK_SCALE[news.riskLevel] : 1;
+  const maxRiskPct = +(MAX_RISK_BY_GRADE[tradeGrade] * newsScale).toFixed(2);
   const positionSize =
     stopDistanceFraction > 0 ? Math.min(100, +(maxRiskPct / stopDistanceFraction).toFixed(2)) : 0;
 

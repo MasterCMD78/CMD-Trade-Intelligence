@@ -13,3 +13,5 @@
 - [Market structure trend/phase derivation](market-structure-trend-phase.md) — comparing trend vs. raw prior swing-label entry misses reversals hidden behind a transient sideways blip; track last directional trend instead
 - [Synthetic candle fixtures for swing-detection tests](swing-detection-test-fixtures.md) — monotonic-step or naive zigzag candles rarely produce clean swings; use a trending sine wave or apex-wick zigzag instead
 - [Composite vs. institutional decision divergence](composite-vs-institutional-decision-divergence.md) — a stricter decision layer must recompute its own entry/stop/target, never reuse the base engine's risk fields
+- [News engine LOCK_TRADING vs forced-WAIT override](news-lock-trading-override.md) — proximity-based restriction tiers (confidence penalty) and the forced-WAIT decision override are separate; don't collapse them
+- [tsx watch + newly-added files](tsx-watch-new-files.md) — tsx watch dev servers don't always pick up brand-new files/modules; restart the workflow after adding files, not just editing existing ones

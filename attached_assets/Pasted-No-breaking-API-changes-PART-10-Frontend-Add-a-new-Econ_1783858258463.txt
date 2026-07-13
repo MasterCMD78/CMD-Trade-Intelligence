@@ -1,0 +1,192 @@
+No breaking API changes.
+
+⸻
+
+PART 10 — Frontend
+
+Add a new
+
+“Economic News Intelligence”
+
+panel
+
+showing:
+
+Current Event
+
+Next Event
+
+Countdown
+
+Severity
+
+News Confidence
+
+Fundamental Bias
+
+Trading Restriction
+
+Risk Level
+
+Recommendation
+
+Affected Currency
+
+Color-code everything consistently with the existing dashboard.
+
+⸻
+
+PART 11 — Provider Architecture
+
+Design provider interfaces.
+
+Support:
+
+Mock Provider
+
+Future Real Provider
+
+Future providers may include:
+
+Forex Factory
+
+TradingEconomics
+
+Financial Modeling Prep
+
+FRED
+
+Investing.com
+
+or other providers.
+
+Do NOT tightly couple business logic to one provider.
+
+⸻
+
+PART 12 — Configuration
+
+Allow configurable:
+
+Warning window
+
+Lock window
+
+Risk thresholds
+
+Confidence penalties
+
+Supported currencies
+
+Timezone
+
+Market sessions
+
+⸻
+
+PART 13 — Tests
+
+Create comprehensive unit tests for:
+
+News Engine
+
+Event parsing
+
+Currency mapping
+
+Confidence
+
+Restrictions
+
+Bias generation
+
+Decision adjustments
+
+Edge cases
+
+Multiple events
+
+Overlapping events
+
+No events
+
+Invalid events
+
+Timezone changes
+
+DST handling
+
+Mock provider
+
+Maintain:
+
+All previous tests passing
+
+New tests passing
+
+Zero regressions
+
+⸻
+
+PART 14 — Quality
+
+Requirements:
+
+Production-quality architecture
+
+No duplicated logic
+
+Pure functions where appropriate
+
+Dependency injection where useful
+
+Clean interfaces
+
+Strong typing
+
+Meaningful documentation
+
+No TODOs
+
+No placeholder implementations
+
+No dead code
+
+⸻
+
+PART 15 — Verification
+
+Before completion:
+
+Run full TypeScript typecheck
+
+Run complete test suite
+
+Run full production build
+
+Restart workflows
+
+Run end-to-end verification
+
+Ensure all previous functionality still works.
+
+⸻
+
+FINAL REPORT
+
+Provide:
+
+* Files modified
+* New modules
+* New interfaces
+* API changes
+* Frontend changes
+* Tests added
+* Total tests passing
+* Build status
+* TypeScript status
+* End-to-end verification results
+
+Finally, recommend the next phase.
+
+The recommendation should be Phase 6 — AI Learning & Trade Memory Engine, which will allow CMD Trade Intelligence to learn from historical trades, improve confidence calibration over time, and become a self-improving institutional trading intelligence platform.

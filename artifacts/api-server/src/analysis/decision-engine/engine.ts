@@ -23,6 +23,8 @@ import type { AnalysisResult } from "../types.js";
 import { computeAllScores } from "./scoring.js";
 import { deriveMarketState } from "./market-state.js";
 import { buildRiskPlan } from "./risk-plan.js";
+import { gradeFromScore } from "./grade.js";
+import { applyNewsAdjustment } from "./news-adjustment.js";
 import type {
   ConfidenceBundle,
   DecisionEngineResult,
@@ -55,14 +57,6 @@ function decideDecision(institutionalScore: number, netDirectionScore: number): 
   if (netDirectionScore >= DECISION_THRESHOLD) return "BUY";
   if (netDirectionScore <= -DECISION_THRESHOLD) return "SELL";
   return "HOLD";
-}
-
-function gradeFromScore(institutionalScore: number): TradeGrade {
-  if (institutionalScore >= 90) return "A+";
-  if (institutionalScore >= 80) return "A";
-  if (institutionalScore >= 65) return "B";
-  if (institutionalScore >= 50) return "C";
-  return "D";
 }
 
 function computeConfidenceBundle(
@@ -118,14 +112,27 @@ export function computeDecisionEngine(
 ): DecisionEngineResult {
   const breakdown = computeAllScores(result);
   const netDirectionScore = computeNetDirectionScore(breakdown);
-  const institutionalScore = computeInstitutionalScore(breakdown);
+  const baseInstitutionalScore = computeInstitutionalScore(breakdown);
 
-  const decision = decideDecision(institutionalScore, netDirectionScore);
-  const tradeGrade = gradeFromScore(institutionalScore);
-  const confidence = computeConfidenceBundle(institutionalScore, netDirectionScore, result);
+  const baseDecision = decideDecision(baseInstitutionalScore, netDirectionScore);
+  const baseGrade = gradeFromScore(baseInstitutionalScore);
+  const baseConfidence = computeConfidenceBundle(baseInstitutionalScore, netDirectionScore, result);
   const marketState = deriveMarketState(result);
-  const risk = buildRiskPlan(result, decision, tradeGrade, currentBid, currentAsk);
-  const reasons = buildReasons(decision, institutionalScore, tradeGrade, marketState, breakdown);
+
+  const newsAdjustment = applyNewsAdjustment({
+    news: result.news,
+    decision: baseDecision,
+    institutionalScore: baseInstitutionalScore,
+    tradeGrade: baseGrade,
+    confidence: baseConfidence,
+  });
+
+  const { decision, institutionalScore, tradeGrade, confidence } = newsAdjustment;
+  const risk = buildRiskPlan(result, decision, tradeGrade, currentBid, currentAsk, result.news);
+  const reasons = [
+    ...buildReasons(decision, institutionalScore, tradeGrade, marketState, breakdown),
+    ...newsAdjustment.reasons,
+  ];
 
   return {
     decision,

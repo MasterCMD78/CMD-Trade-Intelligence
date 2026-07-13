@@ -273,6 +273,9 @@ export type { MultiTimeframeResult } from "./multi-timeframe/types.js";
 // ─── Institutional Decision Engine (Phase 4) ─────────────────────────────────
 export type { DecisionEngineResult } from "./decision-engine/types.js";
 
+// ─── Economic News & Fundamental Intelligence (Phase 5) ──────────────────────
+export type { NewsAnalysisResult } from "./news/types.js";
+
 // ─── Final Analysis Result ────────────────────────────────────────────────────
 
 export interface AnalysisResult {
@@ -303,4 +306,10 @@ export interface AnalysisResult {
    * Combines every module above into one explainable BUY/SELL/HOLD/WAIT call.
    */
   decisionEngine: import("./decision-engine/types.js").DecisionEngineResult;
+  /**
+   * Economic News & Fundamental Intelligence (Phase 5).
+   * Present on every result — computed from an empty event set (neutral
+   * "no data" read) when the caller doesn't supply live news events.
+   */
+  news: import("./news/types.js").NewsAnalysisResult;
 }

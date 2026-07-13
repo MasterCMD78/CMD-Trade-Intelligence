@@ -12,7 +12,7 @@ import {
   BrainCircuit, TrendingUp, TrendingDown, Minus,
   RefreshCw, AlertTriangle, CheckCircle, Shield,
   Activity, BarChart2, Layers, Eye, Clock, GitBranch, Zap,
-  Droplets, Box, Divide, DollarSign,
+  Droplets, Box, Divide, DollarSign, Newspaper, Lock, CalendarClock,
 } from 'lucide-react';
 
 // ─── Types matching the API ───────────────────────────────────────────────────
@@ -167,6 +167,55 @@ interface AnalysisResult {
   };
   multiTimeframe?: MultiTimeframeResult;
   decisionEngine: DecisionEngineResult;
+  news: NewsAnalysisResult;
+}
+
+// ─── Economic News & Fundamental Intelligence types (Phase 5) ────────────────
+
+type EventImpact = 'high' | 'medium' | 'low';
+type EventCategory =
+  | 'CPI' | 'CORE_CPI' | 'NFP' | 'FOMC' | 'INTEREST_RATE' | 'GDP'
+  | 'RETAIL_SALES' | 'UNEMPLOYMENT' | 'PMI' | 'PPI' | 'CENTRAL_BANK_SPEECH' | 'OTHER';
+type FundamentalBias = 'bullish' | 'bearish' | 'neutral' | 'unknown';
+type NewsRisk = 'low' | 'medium' | 'high' | 'extreme';
+type TradingRestriction = 'SAFE' | 'CAUTION' | 'NO_TRADE' | 'LOCK_TRADING';
+type NewsRecommendation = 'PROCEED' | 'CAUTION' | 'WAIT' | 'AVOID';
+
+interface EconomicEvent {
+  id: string;
+  name: string;
+  category: EventCategory;
+  currency: string;
+  country: string;
+  impact: EventImpact;
+  scheduledTime: string;
+  forecast: string | null;
+  previous: string | null;
+  actual: string | null;
+}
+
+interface NewsWindow {
+  minutesUntil: number | null;
+  hoursUntil: number | null;
+  isWarning: boolean;
+  isLocked: boolean;
+}
+
+interface NewsAnalysisResult {
+  symbol: string;
+  currentEvent: EconomicEvent | null;
+  nextEvent: EconomicEvent | null;
+  minutesRemaining: number | null;
+  hoursRemaining: number | null;
+  severity: EventImpact | null;
+  fundamentalBias: FundamentalBias;
+  newsConfidence: number;
+  riskLevel: NewsRisk;
+  tradingRestriction: TradingRestriction;
+  recommendation: NewsRecommendation;
+  affectedCurrencies: string[];
+  window: NewsWindow;
+  activeEvents: EconomicEvent[];
 }
 
 // ─── Institutional Decision Engine types (Phase 4) ────────────────────────────
@@ -282,6 +331,44 @@ const MARKET_STATE_LABEL: Record<MarketState, string> = {
   expansion:     'Expansion',
   consolidation: 'Consolidation',
 };
+
+const RESTRICTION_CONFIG: Record<TradingRestriction, { label: string; color: string; bg: string; icon: typeof Shield }> = {
+  SAFE:         { label: 'Safe to Trade', color: 'text-emerald-400', bg: 'bg-emerald-400/10 border-emerald-400/30', icon: CheckCircle },
+  CAUTION:      { label: 'Caution',       color: 'text-yellow-400',  bg: 'bg-yellow-400/10 border-yellow-400/30',   icon: AlertTriangle },
+  NO_TRADE:     { label: 'No Trade',      color: 'text-orange-400',  bg: 'bg-orange-400/10 border-orange-400/30',   icon: AlertTriangle },
+  LOCK_TRADING: { label: 'Trading Locked', color: 'text-red-400',    bg: 'bg-red-400/10 border-red-400/30',         icon: Lock },
+};
+
+const NEWS_RISK_COLOR: Record<NewsRisk, string> = {
+  low: 'text-emerald-400',
+  medium: 'text-yellow-400',
+  high: 'text-orange-400',
+  extreme: 'text-red-400',
+};
+
+const BIAS_CONFIG: Record<FundamentalBias, { label: string; color: string }> = {
+  bullish: { label: 'Bullish', color: 'text-emerald-400' },
+  bearish: { label: 'Bearish', color: 'text-red-400' },
+  neutral: { label: 'Neutral', color: 'text-muted-foreground' },
+  unknown: { label: 'No Data', color: 'text-muted-foreground' },
+};
+
+const IMPACT_COLOR: Record<EventImpact, string> = {
+  high: 'text-red-400',
+  medium: 'text-yellow-400',
+  low: 'text-muted-foreground',
+};
+
+function formatEventTiming(minutes: number | null): string {
+  if (minutes === null) return '—';
+  const abs = Math.abs(minutes);
+  const label = abs < 60 ? `${Math.round(abs)}m` : `${(abs / 60).toFixed(1)}h`;
+  return minutes >= 0 ? `in ${label}` : `${label} ago`;
+}
+
+function formatEventCategory(category: EventCategory): string {
+  return category.replace(/_/g, ' ');
+}
 
 const SIGNAL_COLOR: Record<Signal, string> = {
   buy:     'text-emerald-400',
@@ -702,6 +789,119 @@ export default function Analysis() {
                         </li>
                       ))}
                     </ul>
+                  </CardContent>
+                </Card>
+              );
+            })()}
+
+            {/* ── Economic News & Fundamental Intelligence (Phase 5) ── */}
+            {(() => {
+              const news = data.news;
+              const rCfg = RESTRICTION_CONFIG[news.tradingRestriction];
+              const RIcon = rCfg.icon;
+              const bCfg = BIAS_CONFIG[news.fundamentalBias];
+              return (
+                <Card className={`bg-card border ${rCfg.bg}`}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-mono uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                      <Newspaper className="h-4 w-4 text-primary" />
+                      Economic News &amp; Fundamental Intelligence
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pb-4 space-y-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+                      <div className={`flex flex-col items-center justify-center gap-2 p-4 rounded-lg border ${rCfg.bg}`}>
+                        <div className={`flex items-center gap-2 ${rCfg.color}`}>
+                          <RIcon className="h-6 w-6" />
+                          <span className="font-bold text-lg tracking-tight">{rCfg.label}</span>
+                        </div>
+                        <span className="font-mono text-xs text-muted-foreground">{news.recommendation}</span>
+                      </div>
+
+                      <div className="flex flex-col gap-1 p-4 bg-muted/30 rounded-lg border border-border">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Fundamental Bias</span>
+                        <span className={`font-mono text-2xl font-bold ${bCfg.color}`}>{bCfg.label}</span>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {news.affectedCurrencies.length > 0 ? news.affectedCurrencies.join(' / ') : '—'}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col gap-1 p-4 bg-muted/30 rounded-lg border border-border">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">News Confidence</span>
+                        <span className="font-mono text-2xl font-bold text-foreground">{news.newsConfidence}<span className="text-sm text-muted-foreground">/100</span></span>
+                        <StrengthBar value={news.newsConfidence / 100} color={news.newsConfidence >= 65 ? 'bg-red-400' : news.newsConfidence >= 35 ? 'bg-yellow-400' : 'bg-emerald-400'} />
+                      </div>
+
+                      <div className="flex flex-col gap-1 p-4 bg-muted/30 rounded-lg border border-border">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">News Risk</span>
+                        <span className={`font-mono text-lg font-bold capitalize ${NEWS_RISK_COLOR[news.riskLevel]}`}>{news.riskLevel}</span>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {news.window.isLocked ? 'Inside lock window' : news.window.isWarning ? 'Inside warning window' : 'Outside warning window'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Current / next event */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className={`p-4 rounded-lg border ${news.currentEvent ? 'bg-red-400/5 border-red-400/30' : 'bg-muted/20 border-border/50'}`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-mono text-xs font-semibold text-muted-foreground uppercase tracking-wider">Active Event</span>
+                          {news.currentEvent && (
+                            <span className={`font-mono text-xs font-semibold uppercase ${IMPACT_COLOR[news.currentEvent.impact]}`}>{news.currentEvent.impact}</span>
+                          )}
+                        </div>
+                        {news.currentEvent ? (
+                          <>
+                            <span className="font-mono text-sm font-bold text-foreground block">{news.currentEvent.name}</span>
+                            <span className="font-mono text-xs text-muted-foreground">
+                              {news.currentEvent.currency} · {formatEventCategory(news.currentEvent.category)} · {formatEventTiming(news.minutesRemaining)}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="font-mono text-xs text-muted-foreground">No active event for this symbol's currencies.</span>
+                        )}
+                      </div>
+
+                      <div className="p-4 rounded-lg border bg-muted/20 border-border/50">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-mono text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                            <CalendarClock className="h-3 w-3" /> Next Event
+                          </span>
+                          {news.nextEvent && (
+                            <span className={`font-mono text-xs font-semibold uppercase ${IMPACT_COLOR[news.nextEvent.impact]}`}>{news.nextEvent.impact}</span>
+                          )}
+                        </div>
+                        {news.nextEvent ? (
+                          <>
+                            <span className="font-mono text-sm font-bold text-foreground block">{news.nextEvent.name}</span>
+                            <span className="font-mono text-xs text-muted-foreground">
+                              {news.nextEvent.currency} · {formatEventCategory(news.nextEvent.category)} · {formatEventTiming(news.hoursRemaining !== null ? news.hoursRemaining * 60 : null)}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="font-mono text-xs text-muted-foreground">No upcoming event scheduled.</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Active events list */}
+                    {news.activeEvents.length > 0 && (
+                      <div className="space-y-2">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">All Active Events — inside the warning window</span>
+                        <div className="space-y-1.5">
+                          {news.activeEvents.map((ev) => (
+                            <div key={ev.id} className="flex items-center gap-3 py-1.5 px-3 rounded-md bg-muted/10">
+                              <span className={`font-mono text-xs font-semibold uppercase w-14 shrink-0 ${IMPACT_COLOR[ev.impact]}`}>{ev.impact}</span>
+                              <span className="font-mono text-xs text-muted-foreground w-12 shrink-0">{ev.currency}</span>
+                              <span className="font-mono text-xs text-foreground/80 flex-1 truncate">{ev.name}</span>
+                              <span className="font-mono text-xs text-muted-foreground shrink-0">
+                                {ev.actual !== null ? `A: ${ev.actual}` : ev.forecast !== null ? `F: ${ev.forecast}` : '—'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               );

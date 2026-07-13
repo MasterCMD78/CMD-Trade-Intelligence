@@ -14,6 +14,7 @@ import { Router, Request, Response } from "express";
 import { requireAuth, AuthenticatedRequest } from "../middlewares/auth.js";
 import { marketDataService, Timeframe } from "../market-data/index.js";
 import { runAnalysis, parseTimeframe } from "../analysis/engine.js";
+import { newsService } from "../analysis/news/index.js";
 import type { MTFKey } from "../analysis/multi-timeframe/types.js";
 import type { MarketCandle } from "../market-data/types.js";
 import { z } from "zod/v4";
@@ -91,11 +92,15 @@ router.get("/:symbol", requireAuth, async (req: AuthenticatedRequest & Request, 
   const timeframe = parseTimeframe(tfParsed.data);
 
   try {
-    // Fetch primary TF candles, current price, and all MTF candles concurrently.
-    const [candles, price, allTimeframeCandles] = await Promise.all([
+    const now = new Date();
+    // Fetch primary TF candles, current price, all MTF candles, and relevant
+    // news events (Phase 5) concurrently. A news-fetch failure is non-fatal —
+    // analysis still runs with an empty event set (neutral news read).
+    const [candles, price, allTimeframeCandles, newsEvents] = await Promise.all([
       marketDataService.getCandles(symbol, timeframe, 200),
       marketDataService.getPrice(symbol),
       fetchAllTimeframeCandles(symbol),
+      newsService.getRelevantEvents(symbol, now).catch(() => []),
     ]);
 
     if (candles.length < 30) {
@@ -110,6 +115,8 @@ router.get("/:symbol", requireAuth, async (req: AuthenticatedRequest & Request, 
       currentBid: price.bid,
       currentAsk: price.ask,
       allTimeframeCandles,
+      newsEvents,
+      now,
     });
 
     res.json(result);

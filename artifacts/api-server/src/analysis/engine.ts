@@ -55,6 +55,8 @@ import {
 } from "./scoring.js";
 import { computeRisk } from "./risk.js";
 import { computeDecisionEngine } from "./decision-engine/engine.js";
+import { computeNewsAnalysis } from "./news/engine.js";
+import type { EconomicEvent } from "./news/types.js";
 
 // ─── Candle close-price extraction ───────────────────────────────────────────
 
@@ -414,6 +416,14 @@ export interface EngineInput {
    * Keys are MTFKey strings (m1, m5, m15, m30, h1, h4, daily, weekly).
    */
   allTimeframeCandles?: Partial<Record<MTFKey, MarketCandle[]>>;
+  /**
+   * Economic calendar events relevant to `symbol` (Phase 5).
+   * When omitted, news analysis runs against an empty event set — a neutral
+   * "no data" read (SAFE / PROCEED / unknown bias / 0 confidence).
+   */
+  newsEvents?: EconomicEvent[];
+  /** Point in time to evaluate news proximity against. Defaults to now. */
+  now?: Date;
 }
 
 /**
@@ -423,6 +433,8 @@ export interface EngineInput {
 export function runAnalysis(input: EngineInput): AnalysisResult {
   const { symbol, timeframe, candles, currentBid, currentAsk, allTimeframeCandles } = input;
   const currentPrice = (currentBid + currentAsk) / 2;
+  const now = input.now ?? new Date();
+  const news = computeNewsAnalysis({ symbol, now, events: input.newsEvents ?? [] });
 
   const indicators = computeIndicators(candles, currentPrice);
   const patterns   = detectCandlestickPatterns(candles);
@@ -471,7 +483,7 @@ export function runAnalysis(input: EngineInput): AnalysisResult {
   const baseResult: Omit<AnalysisResult, "decisionEngine"> = {
     symbol,
     timeframe,
-    timestamp:      new Date().toISOString(),
+    timestamp:      now.toISOString(),
     candleCount:    candles.length,
     decision,
     confidence:     adjustedConfidence,
@@ -486,6 +498,7 @@ export function runAnalysis(input: EngineInput): AnalysisResult {
     reasons,
     marketStructure,
     multiTimeframe: mtf,
+    news,
   };
 
   // Institutional Decision Engine (Phase 4) — combines every module above
